@@ -1,22 +1,13 @@
 import os
 import sys
-from EEE466Baseline.TCPFileTransfer import TCPFileTransfer as CommunicationInterface
+from EEE466Baseline.RUDPFileTransfer import RUDPFileTransfer as CommunicationInterface
 
 # DO NOT import socket
 
 """
     Notes:
-    
-        1. Just an interesting observation I've made when we're getting files from the server. I added code that 
-        verifies if we actually did receive a particular file from the server and placed it into the client's Receive
-        folder, because when I ended up calling "get, server_text_01.txt" and subsequently "get, server_text_02.txt",
-        nothing would change in pycharm's Project Explorer window, but until I quit the program then the Project
-        Explorer populates and I see that the client's Receive folder contains the requested files. Seems like pycharm
-        doesn't automatically update the Project Explorer until the current program it is executing terminates.
-        Accordingly, to ensure that we really did receive the files, I do an extra check on the client side if
-        we actually have the files in the Receive directory, even if pycharm hasn't updated to reflect accordingly. 
 
-        2. Below are the possible server responses:
+        1. Below are the possible server responses:
             "QUIT ACK" --> server acknowledges the quit command that was sent. Prep client to quit as well.
             "PUT ACK" --> server acknowledges the put command it was sent. Prep client to send file.
             "GET ACK" --> server acknowledges the get command it was sent. Prep client to receive file.
@@ -62,47 +53,47 @@ class FTClient(object):
         # Upon initialization, connect client to the server
         self.comm_inf.initialize_client(self.server_address[0], self.server_address[1]);
 
-        # Client main loop:
-        while True:
-
-            # Getting user input (stripped of whitespace)
-            user_input = input("\nType in a command to send to server: \n> ");
-
-
-
-            # Send user input to server
-            self.comm_inf.send_command(user_input);
-
-            # Wait for a server response, decode received msg accordingly (refer to Notes 2)
-            server_response = self.comm_inf.receive_command();
-            if server_response == "GET ACK":
-
-                # Getting the file name from command
-                parsed_command = self.parse_command(user_input);
-                file_name = parsed_command[1];
-
-                # Execute client side of command
-                self.execute_get(file_name);
-
-            elif server_response == "PUT ACK":
-
-                # Getting the file name from command
-                parsed_command = self.parse_command(user_input);
-                file_name = parsed_command[1];
-
-                # Execute client side of command
-                self.execute_put(file_name);
-
-            elif server_response == "QUIT ACK":
-
-                # Break main while loop.
-                print("CLIENT STATUS: Server acknowledged quit request. Terminating client execution...");
-                break;
-
-            else:
-
-                # If nothing else matches, means error was returned. Print error msg accordingly.
-                self.print_client_error(server_response);
+        # # Client main loop:
+        # while True:
+        #
+        #     # Getting user input (stripped of whitespace)
+        #     user_input = input("\nType in a command to send to server: \n> ");
+        #
+        #
+        #
+        #     # Send user input to server
+        #     self.comm_inf.send_command(user_input);
+        #
+        #     # Wait for a server response, decode received msg accordingly (refer to Notes 2)
+        #     server_response = self.comm_inf.receive_command();
+        #     if server_response == "GET ACK":
+        #
+        #         # Getting the file name from command
+        #         parsed_command = self.parse_command(user_input);
+        #         file_name = parsed_command[1];
+        #
+        #         # Execute client side of command
+        #         self.execute_get(file_name);
+        #
+        #     elif server_response == "PUT ACK":
+        #
+        #         # Getting the file name from command
+        #         parsed_command = self.parse_command(user_input);
+        #         file_name = parsed_command[1];
+        #
+        #         # Execute client side of command
+        #         self.execute_put(file_name);
+        #
+        #     elif server_response == "QUIT ACK":
+        #
+        #         # Break main while loop.
+        #         print("CLIENT STATUS: Server acknowledged quit request. Terminating client execution...");
+        #         break;
+        #
+        #     else:
+        #
+        #         # If nothing else matches, means error was returned. Print error msg accordingly.
+        #         self.print_client_error(server_response);
 
 
     def execute_get(self, in_file_name):

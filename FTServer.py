@@ -3,7 +3,7 @@ from enum import Enum;
 
 import os
 import sys
-from EEE466Baseline.TCPFileTransfer import TCPFileTransfer as CommunicationInterface
+from EEE466Baseline.RUDPFileTransfer import RUDPFileTransfer as CommunicationInterface
 
 # DO NOT import socket
 
@@ -67,8 +67,7 @@ class FTServer(object):
     def run(self):
         """
 
-        Upon initialization, wait to receive a connection from a client.
-        Once received, executes main while loop.
+        Upon initialization, open a UDP port, and commence while loop.
 
         Contains main while loop of server:
             1. Waits to receive a command from user.
@@ -82,50 +81,49 @@ class FTServer(object):
 
         # Upon initialization, open port 9000 on server and wait for connection from client.
         self.comm_inf.initialize_server(self.server_source_port);
-        self.comm_inf.establish_server_connection();
 
-        # Server main loop:
-        while True:
-
-            # Wait to receive a command from the client
-            print("\nSERVER: Waiting to receive command from client... ", end = "");
-            client_command = self.comm_inf.receive_command();
-            print(f" command received: [{client_command}]");
-
-            # Parse command into an array of strings.
-            parsed_command = self.parse_command(client_command);
-
-            # Check if parsed_command is empty - if so, means that
-            # client sent too many arguments. Re-prompt client.
-            if len(parsed_command) == 0:
-
-                # Send to client here a reply notifying error and to retry.
-                print(f"SERVER SIDE ERROR: Too many arguments received. Try again.")
-                self.comm_inf.send_command("TOO MANY ARGS");
-                continue;
-
-            # Decode the array and handle decoding errors accordingly (refer Notes 1, 4, 5, 6).
-            # If error, notify client and restart main server loop.
-            server_state = self.decode(parsed_command);
-
-            # If the client had sent a "get" request...
-            if server_state == ServerState.GET_COMM:
-                file_name = parsed_command[1];
-                self.execute_get(file_name);
-
-            # If the client had sent a "put" request...
-            elif server_state == ServerState.PUT_COMM:
-                file_name = parsed_command[1];
-                self.execute_put(file_name);
-
-            # If the client had sent a "quit" request...
-            elif server_state == ServerState.QUIT_COMM:
-                self.execute_quit();
-                break;
-
-            # If nothing else matches, means an error occurred.
-            else:
-                self.handle_server_error(server_state);
+        # # Server main loop:
+        # while True:
+        #
+        #     # Wait to receive a command from the client
+        #     print("\nSERVER: Waiting to receive command from client... ", end = "");
+        #     client_command = self.comm_inf.receive_command();
+        #     print(f" command received: [{client_command}]");
+        #
+        #     # Parse command into an array of strings.
+        #     parsed_command = self.parse_command(client_command);
+        #
+        #     # Check if parsed_command is empty - if so, means that
+        #     # client sent too many arguments. Re-prompt client.
+        #     if len(parsed_command) == 0:
+        #
+        #         # Send to client here a reply notifying error and to retry.
+        #         print(f"SERVER SIDE ERROR: Too many arguments received. Try again.")
+        #         self.comm_inf.send_command("TOO MANY ARGS");
+        #         continue;
+        #
+        #     # Decode the array and handle decoding errors accordingly (refer Notes 1, 4, 5, 6).
+        #     # If error, notify client and restart main server loop.
+        #     server_state = self.decode(parsed_command);
+        #
+        #     # If the client had sent a "get" request...
+        #     if server_state == ServerState.GET_COMM:
+        #         file_name = parsed_command[1];
+        #         self.execute_get(file_name);
+        #
+        #     # If the client had sent a "put" request...
+        #     elif server_state == ServerState.PUT_COMM:
+        #         file_name = parsed_command[1];
+        #         self.execute_put(file_name);
+        #
+        #     # If the client had sent a "quit" request...
+        #     elif server_state == ServerState.QUIT_COMM:
+        #         self.execute_quit();
+        #         break;
+        #
+        #     # If nothing else matches, means an error occurred.
+        #     else:
+        #         self.handle_server_error(server_state);
 
 
     def execute_get(self, in_file_name):

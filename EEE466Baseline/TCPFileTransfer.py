@@ -5,7 +5,7 @@ import os
 import socket
 import math
 from constants_file import DeviceTypes
-
+from EEE466Baseline.CommunicationInterface import CommunicationInterface
 
 # --- Defining the class TCPFileTransfer ---
 
@@ -42,7 +42,7 @@ from constants_file import DeviceTypes
      
 """
 
-class TCPFileTransfer():
+class TCPFileTransfer(CommunicationInterface):
     """
     This class inherits and implements the CommunicationInterface. It enables file transfers between client and server
     using TCP.

@@ -7,3 +7,5 @@ from enum import Enum
 class DeviceTypes(Enum):
     TCPSERVER = "TCPSERVER";
     TCPCLIENT = "TCPCLIENT";
+    UDPSERVER = "UDPSERVER";
+    UDPCLIENT = "UDPCLIENT";
