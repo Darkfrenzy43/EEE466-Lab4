@@ -1,6 +1,6 @@
 import os
 import sys
-from TCPFileTransfer import TCPFileTransfer as CommunicationInterface
+from EEE466Baseline.TCPFileTransfer import TCPFileTransfer as CommunicationInterface
 
 # DO NOT import socket
 
