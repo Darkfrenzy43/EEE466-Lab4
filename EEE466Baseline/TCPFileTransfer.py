@@ -342,7 +342,7 @@ class TCPFileTransfer(CommunicationInterface):
                 # possibility of exceeding in_data's indices, so sending
                 # last slice like this for good practice
                 start_ind = i * 1028;
-                slice_bytes = in_data[start_ind: ];
+                slice_bytes = in_data[start_ind:];
 
             # Otherwise, compute start and end indices for data slices
             else:

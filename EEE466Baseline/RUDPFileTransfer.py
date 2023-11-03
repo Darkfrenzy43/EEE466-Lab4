@@ -16,6 +16,10 @@ import socket
 from constants_file import DeviceTypes
 from EEE466Baseline.CommunicationInterface import CommunicationInterface
 
+import math
+
+# --- Define Global Variables ---
+
 SUCCESS = 1
 ERROR = -1
 SEED = 66
@@ -23,6 +27,8 @@ SEED = 66
 # Change these constants to create reliability errors. Their sum cannot exceed 1.0.
 DROP_PROBABILITY = 0.0
 REPEAT_PROBABILITY = 0.0
+
+RECV_BUFFER_SIZE = 1028;
 
 
 class RUDPFileTransfer(CommunicationInterface):
@@ -41,6 +47,9 @@ class RUDPFileTransfer(CommunicationInterface):
         # Planting the seed
         random.seed(SEED)
 
+        # Attribute for timeouts
+        self.timeout_time = 2;
+
         # Creating attributes as needed (might not need all of them)
         self.device_type = DeviceTypes.UDPCLIENT;  # Setting the device type - default to UDP client
         self.client_socket = None;
@@ -48,9 +57,13 @@ class RUDPFileTransfer(CommunicationInterface):
         self.client_addr = None;
         self.server_addr = None;
 
+        # --- Client only attributes ---
 
-        # Add your code here
+        self.request_id = 0;
 
+        # --- Server only attributes ---
+
+        self.request_database = {}; # Maybe use a dictionary?
 
 
     def initialize_server(self, source_port):
@@ -72,6 +85,9 @@ class RUDPFileTransfer(CommunicationInterface):
         # Bind a UDP socket to the server address
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM);
         self.server_socket.bind(self.server_addr);
+
+        # Set timeout for 1 second for now (hardcoded)
+        self.server_socket.settimeout(self.timeout_time);
 
         # Print statement for status
         print(f"{self.device_type} COMM STATUS: Server bounded and listening on UDP port {self.server_addr[1]}...")
@@ -98,9 +114,13 @@ class RUDPFileTransfer(CommunicationInterface):
         # Create the UDP socket for the client
         self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM);
 
+        # Set timeout for 1 second for now (hardcoded)
+        self.client_socket.settimeout(self.timeout_time);
+
         # Print status
         print(f"{self.device_type} COMM STATUS: Initialized client socket to send "
               f"traffic to server at  {self.server_addr}.")
+
 
     def send_command(self, command):
         """
@@ -118,21 +138,41 @@ class RUDPFileTransfer(CommunicationInterface):
         :param command: The command you wish to send to the server.
         """
 
-        # Determine the socket to use to send, depending on the type of sending device (default to client)
-        sending_socket = self.initial_socket;
-        if self.device_type == DeviceTypes.TCPSERVER:
-            sending_socket = self.server_socket;
+        # --- If sender is Client ---
 
-        # Check if the TCP connection still exists, and that the sender and receiver
-        # agree in terms of the format of the transmitted data. If not, stop function
-        if self.verify_sender(sending_socket, b'COMM ACK'):
-            return;
+        if self.device_type == DeviceTypes.UDPCLIENT:
 
-        # Convert msg into utf-8 bytes
-        send_data = bytes(command, 'utf-8');
+            # Testing for now
+            self.slice_and_send_udp(self.client_socket, self.server_addr, command);
 
-        # Send message to the client (slice up into 1028 byte msgs if needed)
-        self.slice_and_send(sending_socket, send_data);
+            # <------ FOR GET ------>
+
+            # Send command, and request ID
+
+
+            # Wait for ACK from server
+
+            # Send over the file in slices
+
+            # <------ FOR PUT ------>
+
+            # <------ FOR QUIT ------>
+
+            pass;
+
+
+        # --- If sender is Server ---
+
+        elif self.device_type == DeviceTypes.UDPSERVER:
+
+            # <------ FOR GET ------>
+
+            # <------ FOR PUT ------>
+
+            # <------ FOR QUIT ------>
+
+            pass;
+
 
     def receive_command(self):
         """
@@ -148,24 +188,180 @@ class RUDPFileTransfer(CommunicationInterface):
         :return: the command received and any parameters.
         """
 
-        # Determine the socket to receive from, depending on the type of current receiving device (default to client)
-        receiving_socket = self.initial_socket;
-        if self.device_type == DeviceTypes.TCPSERVER:
-            receiving_socket = self.server_socket;
+        # Initialize receive data variable
+        recv_data = None;
 
-        # Check if the TCP connection still exists, and that the sender and receiver
-        # agree in terms of the format of the transmitted data. If not, stop function
-        if self.verify_receiver(receiving_socket, b'COMM ACK'):
-            return;
+        # --- If receiver is Client ---
 
-        # Receive the data bytes from the server
-        recv_msg = self.recv_and_parse(receiving_socket);
+        if self.device_type == DeviceTypes.UDPCLIENT:
 
-        # Decode and return received command
-        return recv_msg.decode();
+            # <------ FOR GET ------>
+
+            # <------ FOR PUT ------>
+
+            # <------ FOR QUIT ------>
+
+            pass;
+
+        # --- If receiver is Server ---
+
+        elif self.device_type == DeviceTypes.UDPSERVER:
+
+            # Testing for now
+            recv_data = self.recv_and_parse_udp(self.server_socket);
+
+            # <------ FOR GET ------>
+
+            # Receive command with request ID, store in database (key = ID, command = content)
+
+            # Reply with ACK with request ID ("ACK ID#")
+
+            # <------ FOR PUT ------>
+
+            # <------ FOR QUIT ------>
+
+            pass;
+
+
+        return recv_data;
+
+    def slice_and_send_udp(self, in_socket, dest_addr, in_data):
+        """
+            Function slices up message in 1028 byte groups. Sending device sends
+            the separate messages via UDP to the destination device.
+
+        Args:
+            <in_socket : socket> : A UDP socket object which the message is sent through.
+            <dest_addr : tuple(string, port)> : The destination address to send the UDP traffic to.
+            <in_data : bytes> : The data to be sent to the other device
+        """
+
+
+
+
+
+        # Create a dictionary here to put the slices and their corresponding slice identifier
+        slice_dict = {};
+
+        # Determine how many slices we are to send
+        bytes_len = len(in_data);
+        slice_num = math.ceil(bytes_len / RECV_BUFFER_SIZE);
+
+        # todo STATUS: Just implemented the packet duplication handling on server side for slice number
+        # todo need to handle timeout from not receiving reply here. Also, consider making adjustment of turning
+        # todo duplicate packets because it would not make sense i think.
+
+        # Send the slice number (convert to string first, then bytes)
+        in_socket.sendto(b'SLICE ' + bytes(str(slice_num), 'utf-8'), dest_addr);
+        in_socket.sendto(b'SLICE ' + bytes(str(slice_num), 'utf-8'), dest_addr);
+        print(in_socket.recv(RECV_BUFFER_SIZE));
+        print(in_socket.recv(RECV_BUFFER_SIZE));
+        print(in_socket.recv(RECV_BUFFER_SIZE));
+        # self.__send_with_errors(b'SLICE ' + bytes(str(slice_num), 'utf-8'), dest_addr, in_socket)
+
+        # socket.timeout IS THE ERROR
+
+        # Block and wait for acknowledgement to number.
+        # if in_socket.recv(RECV_BUFFER_SIZE) == b'ACK NUM':
+        #     print(f"{self.device_type} STATUS: Received slice number acknowledgement. Sending slices...");
+        # else:
+        #     pass; # TODO handle case of no reply - timeout
+
+        # # Send via slices via UDP in order, and wait for acknowledgment each time.
+        # for i in range(slice_num):
+        #
+        #     # Check if sending last slice
+        #     if i == slice_num - 1:
+        #
+        #         # possibility of exceeding in_data's indices, so sending
+        #         # last slice like this for good practice
+        #         start_ind = i * 1028;
+        #         slice_bytes = in_data[start_ind:];
+        #
+        #     # Otherwise, compute start and end indices for data slices
+        #     else:
+        #
+        #         start_ind = i * 1028;
+        #         end_ind = (i + 1) * 1028;
+        #         slice_bytes = in_data[start_ind: end_ind]
+        #
+        #     # Send the slice of bytes via UDP,
+        #     in_socket.sendto(slice_bytes, dest_addr);
+        #
+        #     # and wait for acknowledgment (todo handle retransmission here)
+        #     ack_msg = b'ACK ' + bytes(str(slice_num), 'utf-8');
+        #     if in_socket.recv(RECV_BUFFER_SIZE) != ack_msg:
+        #         print("SHIT, WE DIDN'T GET SOMETHING BACK!");
+        #         # Handle retransmission here I guess
+
+
+
+    def recv_and_parse_udp(self, in_socket):
+        """
+            Function receives data slices of max size 1028 bytes from sender, and reconstructs
+            the original message accordingly.
+
+            TODO Implement possibility of packets being dropped (including with slice number sending)
+
+        Args:
+            <in_socket : socket> : A UDP socket object which the message is received from.
+        Returns:
+            The parsed meessage in bytes.
+        """
+
+        # Create a dictionary for duplicated responses... not?
+        comm_dict = {};
+
+        # Create dummy var to contain all the received data
+        parsed_data = b'';
+
+        # Block and wait to receive the number of slices of bytes to receive
+        slice_num_data, dest_addr = in_socket.recvfrom(RECV_BUFFER_SIZE);
+        slice_num = int(slice_num_data.decode()[6:]);
+
+        # Print status
+        print(f"{self.device_type} STATUS: Expect to receive {slice_num} slices of bytes from sender. "
+              f"Acknowledging...");
+
+        # Acknowledge sender slice number received
+        in_socket.sendto(b'ACK NUM', dest_addr);
+
+        # Add to dictionary the reply to what we received
+        comm_dict[slice_num_data] = b'ACK NUM';
+
+        # Receiving slices
+        i = 0;
+        while i < slice_num:
+
+
+            # Receive data
+            recv_data = in_socket.recv(RECV_BUFFER_SIZE);
+
+            # First check if received a duplicate slice_num_data message (meaning they didn't receive our prev ack)
+            if recv_data in comm_dict:
+
+                print(f"{self.device_type} STATUS: Received duplicate packet {recv_data.decode()}. Resending response.")
+                in_socket.sendto(comm_dict[recv_data], dest_addr);
+
+                # Restart the loop again without modifying i
+                continue;
+
+            # If we received something else, we can remove the (hopefully only) element in the comm_dict history since
+            # we are presuming the sender received the ack
+            comm_dict.clear(); # yep this will do
+
+            # Add to total data, and acknowledge todo handle when nothing received
+            parsed_data += in_socket.recv(RECV_BUFFER_SIZE);
+            ack_msg = b'ACK ' + bytes(str(slice_num), 'utf-8');
+            in_socket.sendto(ack_msg, dest_addr);
+
+            i += 1;
+
+        # Return the parsed data
+        return parsed_data;
 
     # You may modify or ignore this method as necessary.
-    def __send_with_errors(self, msg, addr):
+    def __send_with_errors(self, msg, addr, in_socket):
         """
         This method randomly drops or duplicates a message transmission. The probability of an error is the sum of
         error probabilities.
@@ -175,6 +371,7 @@ class RUDPFileTransfer(CommunicationInterface):
 
         :param msg: Message to be sent.
         :param addr: Tuple of IP address and port number to address message to.
+        :param in_socket: The socket to send the errors on.
         """
 
         send_errors = {
@@ -188,7 +385,7 @@ class RUDPFileTransfer(CommunicationInterface):
         if selected_error == "drop":
             return
         elif selected_error == "repeat":
-            self.sock.sendto(msg, addr)
-            self.sock.sendto(msg, addr)
+            in_socket.sendto(msg, addr)
+            in_socket.sendto(msg, addr)
         else:
-            self.sock.sendto(msg, addr)
+            in_socket.sendto(msg, addr)

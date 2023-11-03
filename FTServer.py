@@ -82,6 +82,10 @@ class FTServer(object):
         # Upon initialization, open port 9000 on server and wait for connection from client.
         self.comm_inf.initialize_server(self.server_source_port);
 
+        # Try receiving bit of data
+        print(self.comm_inf.receive_command());
+
+
         # # Server main loop:
         # while True:
         #
