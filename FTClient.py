@@ -54,13 +54,6 @@ class FTClient(object):
         # Upon initialization, connect client to the server
         self.comm_inf.initialize_client(self.server_address[0], self.server_address[1]);
 
-        # with open("./output.txt", "w") as open_file:
-        #     open_file.write(self.comm_inf.receive_command())
-
-        # self.comm_inf.send_file("Client\\Send\\client_text_02.txt");
-        #
-        # self.comm_inf.receive_file("Client\\Receive\\server_text_01.txt")
-
         # Client main loop:
         while True:
 

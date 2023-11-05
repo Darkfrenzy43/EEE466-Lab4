@@ -82,12 +82,6 @@ class FTServer(object):
         # Upon initialization, open port 9000 on server and wait for connection from client.
         self.comm_inf.initialize_server(self.server_source_port);
 
-        # self.comm_inf.send_command("GOD HELP ME PLS\n" * 400);
-
-        # self.comm_inf.receive_file("Server\\Receive\\client_text_02.txt");
-        #
-        # self.comm_inf.send_file("Server\\Send\\server_text_01.txt");
-
         # Server main loop:
         while True:
 
