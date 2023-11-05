@@ -17,6 +17,7 @@ from constants_file import DeviceTypes
 from EEE466Baseline.CommunicationInterface import CommunicationInterface
 
 import math
+import datetime
 
 # --- Define Global Variables ---
 
@@ -26,7 +27,7 @@ SEED = 66
 
 # Change these constants to create reliability errors. Their sum cannot exceed 1.0.
 DROP_PROBABILITY = 0.0
-REPEAT_PROBABILITY = 0.0
+REPEAT_PROBABILITY = 0.80
 
 RECV_BUFFER_SIZE = 1028;
 
@@ -138,41 +139,20 @@ class RUDPFileTransfer(CommunicationInterface):
         :param command: The command you wish to send to the server.
         """
 
+        send_data = bytes(command, 'utf-8');
+
         # --- If sender is Client ---
 
         if self.device_type == DeviceTypes.UDPCLIENT:
 
             # Testing for now
-            self.slice_and_send_udp(self.client_socket, self.server_addr, command);
-
-            # <------ FOR GET ------>
-
-            # Send command, and request ID
-
-
-            # Wait for ACK from server
-
-            # Send over the file in slices
-
-            # <------ FOR PUT ------>
-
-            # <------ FOR QUIT ------>
-
-            pass;
-
+            self.slice_and_send_udp(self.client_socket, self.server_addr, send_data);
 
         # --- If sender is Server ---
 
         elif self.device_type == DeviceTypes.UDPSERVER:
 
-            # <------ FOR GET ------>
-
-            # <------ FOR PUT ------>
-
-            # <------ FOR QUIT ------>
-
-            pass;
-
+            self.slice_and_send_udp(self.server_socket, self.client_addr, send_data);
 
     def receive_command(self):
         """
@@ -192,107 +172,136 @@ class RUDPFileTransfer(CommunicationInterface):
         recv_data = None;
 
         # --- If receiver is Client ---
-
         if self.device_type == DeviceTypes.UDPCLIENT:
-
-            # <------ FOR GET ------>
-
-            # <------ FOR PUT ------>
-
-            # <------ FOR QUIT ------>
-
-            pass;
+            recv_data = self.recv_and_parse_udp(self.client_socket);
 
         # --- If receiver is Server ---
-
         elif self.device_type == DeviceTypes.UDPSERVER:
-
-            # Testing for now
             recv_data = self.recv_and_parse_udp(self.server_socket);
 
-            # <------ FOR GET ------>
-
-            # Receive command with request ID, store in database (key = ID, command = content)
-
-            # Reply with ACK with request ID ("ACK ID#")
-
-            # <------ FOR PUT ------>
-
-            # <------ FOR QUIT ------>
-
-            pass;
 
 
-        return recv_data;
+        return recv_data.decode();
 
-    def slice_and_send_udp(self, in_socket, dest_addr, in_data):
+    def slice_and_send_udp(self, in_socket, recv_addr, in_data):
         """
             Function slices up message in 1028 byte groups. Sending device sends
             the separate messages via UDP to the destination device.
 
         Args:
             <in_socket : socket> : A UDP socket object which the message is sent through.
-            <dest_addr : tuple(string, port)> : The destination address to send the UDP traffic to.
+            <recv_addr : tuple(string, port)> : The destination address to send the UDP traffic to.
             <in_data : bytes> : The data to be sent to the other device
         """
 
+        # Note: We want to ignore any duplicate ACKS we get from the receiving device,
+        # so, we'll create an ack history (probably a list) to contain the most recent
+        # ack from the receiver, and if we get a duplicate ack, we can recognize it if it is
+        # in the ack history and ignore it accordingly. As soon as we get a different ack
+        # (the ack to the next message sent), then we can replace the recent ack history with
+        # what we just received, since we can anticipate any duplicate acks to be of that kind
 
-
-
-
-        # Create a dictionary here to put the slices and their corresponding slice identifier
-        slice_dict = {};
+        # Creating ack history to store the most recent ACK from receiver
+        ack_history = [];
 
         # Determine how many slices we are to send
         bytes_len = len(in_data);
         slice_num = math.ceil(bytes_len / RECV_BUFFER_SIZE);
 
-        # todo STATUS: Just implemented the packet duplication handling on server side for slice number
-        # todo need to handle timeout from not receiving reply here. Also, consider making adjustment of turning
-        # todo duplicate packets because it would not make sense i think.
+        print(bytes_len);
 
-        # Send the slice number (convert to string first, then bytes)
-        in_socket.sendto(b'SLICE ' + bytes(str(slice_num), 'utf-8'), dest_addr);
-        in_socket.sendto(b'SLICE ' + bytes(str(slice_num), 'utf-8'), dest_addr);
-        print(in_socket.recv(RECV_BUFFER_SIZE));
-        print(in_socket.recv(RECV_BUFFER_SIZE));
-        print(in_socket.recv(RECV_BUFFER_SIZE));
-        # self.__send_with_errors(b'SLICE ' + bytes(str(slice_num), 'utf-8'), dest_addr, in_socket)
+        # Okay, we're going to take a streamlined approach to sending the messages over,
+        # including the slice number to send - this is to ensure we ignore any duplicated acks
+        ack_msg = b'';
+        send_data = b'';
+        i = 0;
+        while i < slice_num + 1:
 
-        # socket.timeout IS THE ERROR
+            print(f"[{datetime.datetime.utcnow()}] ", end="")
 
-        # Block and wait for acknowledgement to number.
-        # if in_socket.recv(RECV_BUFFER_SIZE) == b'ACK NUM':
-        #     print(f"{self.device_type} STATUS: Received slice number acknowledgement. Sending slices...");
-        # else:
-        #     pass; # TODO handle case of no reply - timeout
+            # For first iteration (when i = 0), send slice number
+            if i == 0:
 
-        # # Send via slices via UDP in order, and wait for acknowledgment each time.
-        # for i in range(slice_num):
-        #
-        #     # Check if sending last slice
-        #     if i == slice_num - 1:
-        #
-        #         # possibility of exceeding in_data's indices, so sending
-        #         # last slice like this for good practice
-        #         start_ind = i * 1028;
-        #         slice_bytes = in_data[start_ind:];
-        #
-        #     # Otherwise, compute start and end indices for data slices
-        #     else:
-        #
-        #         start_ind = i * 1028;
-        #         end_ind = (i + 1) * 1028;
-        #         slice_bytes = in_data[start_ind: end_ind]
-        #
-        #     # Send the slice of bytes via UDP,
-        #     in_socket.sendto(slice_bytes, dest_addr);
-        #
-        #     # and wait for acknowledgment (todo handle retransmission here)
-        #     ack_msg = b'ACK ' + bytes(str(slice_num), 'utf-8');
-        #     if in_socket.recv(RECV_BUFFER_SIZE) != ack_msg:
-        #         print("SHIT, WE DIDN'T GET SOMETHING BACK!");
-        #         # Handle retransmission here I guess
+                # Configure data to send and ack msg to expect to receive
+                send_data = b'SLICE ' + bytes(str(slice_num), 'utf-8')
+                ack_msg = b'ACK NUM';
+
+            else:
+
+                temp_i = i - 1;  # Used for calculations of the slices
+
+                # Check if sending last slice (remember, we added an extra iteration to send
+                # the slice numbers, so the last slice of data to send would be when i == slice_num
+                if i == slice_num:
+
+                    # possibility of exceeding in_data's indices, so sending
+                    # last slice like this for good practice
+                    start_ind = temp_i * 1028;
+                    send_data = in_data[start_ind:];
+
+                # Otherwise, compute start and end indices for data slices
+                else:
+
+                    start_ind = temp_i * 1028;
+                    end_ind = (temp_i + 1) * 1028;
+                    send_data = in_data[start_ind: end_ind]
+
+                # Configure ack messasge expect to receive
+                ack_msg = b'ACK ' + bytes(str(i - 1), 'utf-8');
+
+
+            print(f"Sending data length: {len(send_data)}")
+            # Send info (with errors)
+            print(f"{self.device_type} SENDING: Sending data, expecting ack of {ack_msg.decode()}")
+            self.__send_with_errors(send_data, recv_addr, in_socket);
+            # in_socket.sendto(send_data, recv_addr);
+
+
+            # Wait for ack with timeout possibility
+            try:
+                recv_data = in_socket.recv(RECV_BUFFER_SIZE);
+
+            except socket.timeout:
+
+                if i == 0:
+                    print(f"{self.device_type} ERROR: No ACK received before timeout. Retransmitting slice number.")
+                else:
+                    print(f"{self.device_type} ERROR: No ACK received before timeout. Retransmitting slice {i - 1}.");
+                continue;
+
+            # todo won't we encounter the case where in one recv_data buffer read,
+            # todo we'll have the duplicate acks there ie. 'ACK 1ACK 1'? We'll have to see.
+
+            # Check if the ack received is what we were expecting, or if it
+            # was the previous ack received. If former, proceed with next message to send,
+            # if latter, ignore it and proceed with next one
+            print(f"[{datetime.datetime.utcnow()}] ", end = "")
+            if recv_data == ack_msg:
+
+                # Replace the ack in the ack_history with newly received ack, and continue
+                # (account for case if was empty)
+                if len(ack_history) == 0:
+                    ack_history.append(ack_msg);
+                else:
+                    ack_history[0] = ack_msg;
+
+                print(f"{self.device_type} STATUS: Received ack {recv_data.decode()}. ack_history contains "
+                      f"{ack_history[0].decode()}.");
+
+            elif recv_data in ack_history:
+
+                # Don't increment i because we would inadvertently skip the current i slice. Basically, we retransmit
+                # the current i slice in the end lol
+                print(f"{self.device_type} STATUS: Received DUPLICATE ack for {ack_history[0].decode()}. Retransmitting"
+                      f" slice {i - 1}.");
+                continue;
+
+            else:
+                print(f"{self.device_type} ERROR: Received an unexpected ack.\n"
+                      f"Expected ack message {ack_msg.decode()}, received {recv_data.decode()}.");
+
+            # Increment i here
+            i += 1;
 
 
 
@@ -309,55 +318,95 @@ class RUDPFileTransfer(CommunicationInterface):
             The parsed meessage in bytes.
         """
 
-        # Create a dictionary for duplicated responses... not?
-        comm_dict = {};
+        # Note: We want to resend ACKS if we get duplicate messages from the sender
 
-        # Create dummy var to contain all the received data
+        # Create a dictionary of messages received from sender. Used to handle duplicated responses.
+        recv_msg_history = {};
+
+        # Create dummy vars to contain all the received data, and the sender's address
         parsed_data = b'';
+        slice_num_data = None;
+        sender_addr = None;
 
-        # Block and wait to receive the number of slices of bytes to receive
-        slice_num_data, dest_addr = in_socket.recvfrom(RECV_BUFFER_SIZE);
+        # todo how are we handling duplicates for this slice receiving part?
+
+        # Block and wait to receive the number of slices of bytes to receive.
+        # Account for possibility of timeout (note, nothing to retransmit though here)
+        while True:
+            try:
+                slice_num_data, sender_addr = in_socket.recvfrom(RECV_BUFFER_SIZE);
+                break;
+            except socket.timeout:
+                print(f"{self.device_type} STATUS: UDP receive socket timed out waiting for slice number. Trying again.");
+                continue;
+
+        # Decode data to find number of slices to receive
         slice_num = int(slice_num_data.decode()[6:]);
-
-        # Print status
+        print(f"[{datetime.datetime.utcnow()}] ", end = "")
         print(f"{self.device_type} STATUS: Expect to receive {slice_num} slices of bytes from sender. "
               f"Acknowledging...");
 
-        # Acknowledge sender slice number received
-        in_socket.sendto(b'ACK NUM', dest_addr);
+        # Acknowledge sender slice number received, and add received msg and returned ack to history
+        # self.__send_with_errors(b'ACK NUM', sender_addr, in_socket);
+        in_socket.sendto(b'ACK NUM', sender_addr);
+        print(f"[{datetime.datetime.utcnow()}] : Sent back acknowledgement for slice number.")
+        recv_msg_history[slice_num_data] = b'ACK NUM';
 
-        # Add to dictionary the reply to what we received
-        comm_dict[slice_num_data] = b'ACK NUM';
-
-        # Receiving slices
+        # Receiving slices (use while loop to account for repeated replies)
         i = 0;
         while i < slice_num:
 
+            print(f"[{datetime.datetime.utcnow()}] ", end="")
 
-            # Receive data
-            recv_data = in_socket.recv(RECV_BUFFER_SIZE);
+            # Receive data (account for timeout possibility)
+            recv_data = None;
+            while True:
+                try:
+                    recv_data = in_socket.recv(RECV_BUFFER_SIZE);
+                    break;
+                except socket.timeout:
+                    print(
+                        f"{self.device_type} STATUS: UDP receive socket timed out waiting for slice {i}. Trying again.");
+                    continue;
 
-            # First check if received a duplicate slice_num_data message (meaning they didn't receive our prev ack)
-            if recv_data in comm_dict:
 
-                print(f"{self.device_type} STATUS: Received duplicate packet {recv_data.decode()}. Resending response.")
-                in_socket.sendto(comm_dict[recv_data], dest_addr);
+            # First check if received a duplicate message
+            if recv_data in recv_msg_history:
+
+                # If so, reply with the duplicated message's corresponding ack
+                print(f"{self.device_type} STATUS: Received duplicate packet for response {recv_msg_history[recv_data]}."
+                      f" Duplicate had length {len(recv_data)}. Resending response.")
+                #self.__send_with_errors(recv_msg_history[recv_data], sender_addr, in_socket);
+                in_socket.sendto(recv_msg_history[recv_data], sender_addr);
+
+                # Do a dummy read here to clear any data that may have been collected in the buffer before
+                # receiving the duplicate message
+                in_socket.recv(RECV_BUFFER_SIZE);
 
                 # Restart the loop again without modifying i
                 continue;
 
+            else:
+                print(len(recv_msg_history))
+
+                print(f"{self.device_type} STATUS: Received data for slice {i} of length {len(recv_data)}.")
+
             # If we received something else, we can remove the (hopefully only) element in the comm_dict history since
             # we are presuming the sender received the ack
-            comm_dict.clear(); # yep this will do
+            recv_msg_history.clear(); # yep this will do
 
-            # Add to total data, and acknowledge todo handle when nothing received
-            parsed_data += in_socket.recv(RECV_BUFFER_SIZE);
-            ack_msg = b'ACK ' + bytes(str(slice_num), 'utf-8');
-            in_socket.sendto(ack_msg, dest_addr);
+            # Add to total data, and acknowledge
+            parsed_data += recv_data;
+            ack_msg = b'ACK ' + bytes(str(i), 'utf-8');
+            recv_msg_history[recv_data] = ack_msg;
+            # self.__send_with_errors(ack_msg, sender_addr, in_socket);
+            in_socket.sendto(ack_msg, sender_addr);
 
+            # Increment i
             i += 1;
 
         # Return the parsed data
+        print(len(parsed_data));
         return parsed_data;
 
     # You may modify or ignore this method as necessary.
@@ -385,7 +434,9 @@ class RUDPFileTransfer(CommunicationInterface):
         if selected_error == "drop":
             return
         elif selected_error == "repeat":
+            print(f"[{datetime.datetime.utcnow()}]: First sent")
             in_socket.sendto(msg, addr)
+            print(f"[{datetime.datetime.utcnow()}]: Duplicate sent")
             in_socket.sendto(msg, addr)
         else:
             in_socket.sendto(msg, addr)

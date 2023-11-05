@@ -54,7 +54,7 @@ class FTClient(object):
         self.comm_inf.initialize_client(self.server_address[0], self.server_address[1]);
 
         # Try sending a bit of data
-        self.comm_inf.send_command(b'RANDOM' * 1000);
+        self.comm_inf.send_command("HELP ME GOD\n" * 500);
 
         # # Client main loop:
         # while True:
