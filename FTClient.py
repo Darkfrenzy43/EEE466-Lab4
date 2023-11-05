@@ -32,6 +32,7 @@ class FTClient(object):
         # Hard code server address for now
         self.server_address = ('localhost', 9000);
 
+
     def run(self):
         """
 
@@ -53,50 +54,53 @@ class FTClient(object):
         # Upon initialization, connect client to the server
         self.comm_inf.initialize_client(self.server_address[0], self.server_address[1]);
 
-        # Try sending a bit of data
-        self.comm_inf.send_command("HELP ME GOD\n" * 500);
+        # with open("./output.txt", "w") as open_file:
+        #     open_file.write(self.comm_inf.receive_command())
 
-        # # Client main loop:
-        # while True:
+        # self.comm_inf.send_file("Client\\Send\\client_text_02.txt");
         #
-        #     # Getting user input (stripped of whitespace)
-        #     user_input = input("\nType in a command to send to server: \n> ");
-        #
-        #
-        #
-        #     # Send user input to server
-        #     self.comm_inf.send_command(user_input);
-        #
-        #     # Wait for a server response, decode received msg accordingly (refer to Notes 2)
-        #     server_response = self.comm_inf.receive_command();
-        #     if server_response == "GET ACK":
-        #
-        #         # Getting the file name from command
-        #         parsed_command = self.parse_command(user_input);
-        #         file_name = parsed_command[1];
-        #
-        #         # Execute client side of command
-        #         self.execute_get(file_name);
-        #
-        #     elif server_response == "PUT ACK":
-        #
-        #         # Getting the file name from command
-        #         parsed_command = self.parse_command(user_input);
-        #         file_name = parsed_command[1];
-        #
-        #         # Execute client side of command
-        #         self.execute_put(file_name);
-        #
-        #     elif server_response == "QUIT ACK":
-        #
-        #         # Break main while loop.
-        #         print("CLIENT STATUS: Server acknowledged quit request. Terminating client execution...");
-        #         break;
-        #
-        #     else:
-        #
-        #         # If nothing else matches, means error was returned. Print error msg accordingly.
-        #         self.print_client_error(server_response);
+        # self.comm_inf.receive_file("Client\\Receive\\server_text_01.txt")
+
+        # Client main loop:
+        while True:
+
+            # Getting user input (stripped of whitespace)
+            user_input = input("\nType in a command to send to server: \n> ");
+
+            # Send user input to server
+            self.comm_inf.send_command(user_input);
+            print(f"CLIENT STATUS: Command [{user_input}] sent to server. Awaiting response...");
+
+            # Wait for a server response, decode received msg accordingly (refer to Notes 2)
+            server_response = self.comm_inf.receive_command();
+            if server_response == "GET ACK":
+
+                # Getting the file name from command
+                parsed_command = self.parse_command(user_input);
+                file_name = parsed_command[1];
+
+                # Execute client side of command
+                self.execute_get(file_name);
+
+            elif server_response == "PUT ACK":
+
+                # Getting the file name from command
+                parsed_command = self.parse_command(user_input);
+                file_name = parsed_command[1];
+
+                # Execute client side of command
+                self.execute_put(file_name);
+
+            elif server_response == "QUIT ACK":
+
+                # Break main while loop.
+                print("CLIENT STATUS: Server acknowledged quit request. Terminating client execution...");
+                break;
+
+            else:
+
+                # If nothing else matches, means error was returned. Print error msg accordingly.
+                self.print_client_error(server_response);
 
 
     def execute_get(self, in_file_name):

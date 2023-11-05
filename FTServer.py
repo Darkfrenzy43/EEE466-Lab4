@@ -82,52 +82,54 @@ class FTServer(object):
         # Upon initialization, open port 9000 on server and wait for connection from client.
         self.comm_inf.initialize_server(self.server_source_port);
 
-        # Try receiving bit of data
-        print(self.comm_inf.receive_command());
+        # self.comm_inf.send_command("GOD HELP ME PLS\n" * 400);
 
+        # self.comm_inf.receive_file("Server\\Receive\\client_text_02.txt");
+        #
+        # self.comm_inf.send_file("Server\\Send\\server_text_01.txt");
 
-        # # Server main loop:
-        # while True:
-        #
-        #     # Wait to receive a command from the client
-        #     print("\nSERVER: Waiting to receive command from client... ", end = "");
-        #     client_command = self.comm_inf.receive_command();
-        #     print(f" command received: [{client_command}]");
-        #
-        #     # Parse command into an array of strings.
-        #     parsed_command = self.parse_command(client_command);
-        #
-        #     # Check if parsed_command is empty - if so, means that
-        #     # client sent too many arguments. Re-prompt client.
-        #     if len(parsed_command) == 0:
-        #
-        #         # Send to client here a reply notifying error and to retry.
-        #         print(f"SERVER SIDE ERROR: Too many arguments received. Try again.")
-        #         self.comm_inf.send_command("TOO MANY ARGS");
-        #         continue;
-        #
-        #     # Decode the array and handle decoding errors accordingly (refer Notes 1, 4, 5, 6).
-        #     # If error, notify client and restart main server loop.
-        #     server_state = self.decode(parsed_command);
-        #
-        #     # If the client had sent a "get" request...
-        #     if server_state == ServerState.GET_COMM:
-        #         file_name = parsed_command[1];
-        #         self.execute_get(file_name);
-        #
-        #     # If the client had sent a "put" request...
-        #     elif server_state == ServerState.PUT_COMM:
-        #         file_name = parsed_command[1];
-        #         self.execute_put(file_name);
-        #
-        #     # If the client had sent a "quit" request...
-        #     elif server_state == ServerState.QUIT_COMM:
-        #         self.execute_quit();
-        #         break;
-        #
-        #     # If nothing else matches, means an error occurred.
-        #     else:
-        #         self.handle_server_error(server_state);
+        # Server main loop:
+        while True:
+
+            # Wait to receive a command from the client
+            print("\nSERVER: Waiting to receive command from client... ", end = "");
+            client_command = self.comm_inf.receive_command();
+            print(f"Command received: [{client_command}]");
+
+            # Parse command into an array of strings.
+            parsed_command = self.parse_command(client_command);
+
+            # Check if parsed_command is empty - if so, means that
+            # client sent too many arguments. Re-prompt client.
+            if len(parsed_command) == 0:
+
+                # Send to client here a reply notifying error and to retry.
+                print(f"SERVER SIDE ERROR: Too many arguments received. Try again.")
+                self.comm_inf.send_command("TOO MANY ARGS");
+                continue;
+
+            # Decode the array and handle decoding errors accordingly (refer Notes 1, 4, 5, 6).
+            # If error, notify client and restart main server loop.
+            server_state = self.decode(parsed_command);
+
+            # If the client had sent a "get" request...
+            if server_state == ServerState.GET_COMM:
+                file_name = parsed_command[1];
+                self.execute_get(file_name);
+
+            # If the client had sent a "put" request...
+            elif server_state == ServerState.PUT_COMM:
+                file_name = parsed_command[1];
+                self.execute_put(file_name);
+
+            # If the client had sent a "quit" request...
+            elif server_state == ServerState.QUIT_COMM:
+                self.execute_quit();
+                break;
+
+            # If nothing else matches, means an error occurred.
+            else:
+                self.handle_server_error(server_state);
 
 
     def execute_get(self, in_file_name):
@@ -186,9 +188,13 @@ class FTServer(object):
         """ This function as created to make the main loop code cleaner.
         Function simply prints status message, acknowledges client quit request, and closes connection. """
 
-        print("SERVER STATUS: Received quit request. Terminating server execution...")
+        print("SERVER STATUS: Received quit request. Acknowledging...")
         self.comm_inf.send_command("QUIT ACK");
-        self.comm_inf.close_connection();
+
+        # We'll physically quit the program here, to avoid the case where last ACK from client
+        # was dropped, which would result in a timeout and then a forcibly closed error.
+        print("SERVER STATUS: Terminating server execution.");
+        exit();
 
 
     def handle_server_error(self, server_error_state):
