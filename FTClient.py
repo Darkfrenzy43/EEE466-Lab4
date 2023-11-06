@@ -2,6 +2,8 @@ import os
 import sys
 from EEE466Baseline.RUDPFileTransfer import RUDPFileTransfer as CommunicationInterface
 
+from constants_file import TIMEDOUT, NON_DECODABLE_NUM
+
 # DO NOT import socket
 
 """

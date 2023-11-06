@@ -4,6 +4,7 @@ from enum import Enum;
 import os
 import sys
 from EEE466Baseline.RUDPFileTransfer import RUDPFileTransfer as CommunicationInterface
+from constants_file import ServerState
 
 # DO NOT import socket
 
@@ -41,15 +42,7 @@ from EEE466Baseline.RUDPFileTransfer import RUDPFileTransfer as CommunicationInt
 
 """
 
-# Making an enum class that tracks errors
-class ServerState(Enum):
-    UNRECOG_COMM = 0;
-    NONEXIST_FILE = 1;
-    PUT_COMM = 2;
-    GET_COMM = 3;
-    NO_FILE = 4;
-    INVALID_QUIT = 5;
-    QUIT_COMM = 6;
+
 
 
 class FTServer(object):
@@ -88,8 +81,11 @@ class FTServer(object):
             # Wait to receive a command from the client
             print("\nSERVER: Waiting to receive command from client... ", end = "");
             client_command = self.comm_inf.receive_command();
-            if client_command == "XXTIMEDOUTXX":     # todo consider fixing this
+            if client_command == "XX_TIMEDOUT_XX":
                 print("\nSERVER: Experienced timed out. Restarting loop.");
+                continue;
+            elif client_command == "XX_NON_DECODABLE_NUM_XX":
+                print("\nSERVER: Command failed. Restarting loop.");
                 continue;
             print(f"Command received: [{client_command}]");
 
