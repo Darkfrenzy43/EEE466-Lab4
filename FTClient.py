@@ -130,9 +130,12 @@ class FTClient(object):
         # Check if the given file exists in client database.
         # If so, send ACK, then file, otherwise, send ERROR.
         if os.path.exists(client_file_path):
+
             print("CLIENT STATUS: File to send exists in client database. Sending...");
             self.comm_inf.send_command("ACK");
+
             self.comm_inf.send_file(client_file_path);
+
         else:
             print("CLIENT SIDE ERROR: File to send does not exist in client database. Verify file name.");
             self.comm_inf.send_command("ERROR");

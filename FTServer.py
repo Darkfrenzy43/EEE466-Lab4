@@ -88,6 +88,9 @@ class FTServer(object):
             # Wait to receive a command from the client
             print("\nSERVER: Waiting to receive command from client... ", end = "");
             client_command = self.comm_inf.receive_command();
+            if client_command == "XXTIMEDOUTXX":
+                print("\nSERVER: Experienced timed out. Restarting loop.");
+                continue;
             print(f"Command received: [{client_command}]");
 
             # Parse command into an array of strings.

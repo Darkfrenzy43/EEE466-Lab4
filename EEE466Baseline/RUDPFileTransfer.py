@@ -58,6 +58,20 @@
             an annoying situation. Honestly, I can't think of any solutions to it - in the end what had needed
             to be sent was sent in terms of data over the wire.
 
+        7. Making the message history list and dictionary a class wide attribute:
+
+            7.1: Yeah so I was also encountering another problem with UDP, where if the final message a sender or
+            receiver sends to the other in a conversation, if it a duplicate, then 99% of the time the duplicates
+            of the message end up getting passed as input in whatever next data transaction takes place, and
+            consequently it screws everything up. that's when I realized I can't have these message histories span
+            between messages within the scope of a given conversation, but also between the first and last messages
+            of separate transactions. Hope this works.
+
+    Status:
+
+        - We are still having problems with putting and getting files - there's overlap in between transactions
+        I think still. We got the stuff within the transactions good to go, but between a few I don't think
+        it's perfect just yet. We still got time though. Take a break from this, would you :).
 
 
 """
@@ -112,6 +126,13 @@ class RUDPFileTransfer(CommunicationInterface):
         self.server_socket = None;
         self.client_addr = None;
         self.server_addr = None;
+
+        # Creating ack history to store the most recent ACK from receiver device (list is all we need) (refer to notes 6)
+        self.ack_history = [];
+
+        # Create a dictionary of messages received from sender. Will store one
+        # "received msg" : "ACK Response" pair at a time. (Refer to notes 6)
+        self.recv_msg_history = {};
 
 
     def initialize_server(self, source_port):
@@ -323,7 +344,7 @@ class RUDPFileTransfer(CommunicationInterface):
         Args:
             <in_socket : socket> : The socket to flush the buffer of. """
 
-        in_socket.settimeout(0.2);
+        in_socket.settimeout(0.5);
         while True:
             try:
                 in_socket.recv(RECV_BUFFER_SIZE);
@@ -358,15 +379,9 @@ class RUDPFileTransfer(CommunicationInterface):
         # If surpassed max amount, assuming network failure and stop function completely.
         timeout_counter = 0;
 
-        # Creating ack history to store the most recent ACK from receiver (list is all we need).
-        ack_history = [];
-
         # Determine how many slices we are to send
         bytes_len = len(in_data);
         slice_num = math.ceil(bytes_len / RECV_BUFFER_SIZE);
-
-        # Before use, ensure to flush socket (refer to notes 5)
-        self.flush_socket(in_socket);
 
         # Send number of slices and data slices (refer to Notes 2.2 and 3 for more info)
         i = 0;
@@ -442,19 +457,19 @@ class RUDPFileTransfer(CommunicationInterface):
             if recv_data == ack_msg:
 
                 # Replace the ACK msg in the ack_history with newly received ack (account for case if history was empty)
-                if len(ack_history) == 0:
-                    ack_history.append(ack_msg);
+                if len(self.ack_history) == 0:
+                    self.ack_history.append(ack_msg);
                 else:
-                    ack_history[0] = ack_msg;
+                    self.ack_history[0] = ack_msg;
 
                 # Print status
                 print(f"{self.device_type} STATUS: Received {recv_data.decode()} - replacing previous ack "
                       f"in ACK history.");
 
-            elif recv_data in ack_history:
+            elif recv_data in self.ack_history:
 
                 # If received duplicate previous ack, retransmit current slice.
-                print(f"{self.device_type} STATUS: Received DUPLICATE ack for {ack_history[0].decode()}. Retransmitting"
+                print(f"{self.device_type} STATUS: Received DUPLICATE ack for {self.ack_history[0].decode()}. Retransmitting"
                       f" slice {i - 1}.");
                 continue;
 
@@ -495,28 +510,64 @@ class RUDPFileTransfer(CommunicationInterface):
         # If surpassed max amount, assuming network failure and stop function completely.
         timeout_counter = 0;
 
-        # Create a dictionary of messages received from sender. Will store one
-        # "received msg" : "ACK Response" pair at a time.
-        recv_msg_history = {};
-
         # Create dummy vars to contain all the received data and the sender's address
         parsed_data = b'';
         slice_num_data = None;
         sender_addr = None;
 
-        # Block and wait to receive the number of slices of bytes to receive.
-        # Turn off timeouts here (refer to notes 4).
-        in_socket.settimeout(None);
-        slice_num_data, sender_addr = in_socket.recvfrom(RECV_BUFFER_SIZE);
-        in_socket.settimeout(self.timeout_time);
-
-        # Little detail to add here: if currently the server, we are going to need to save whoever sent the
-        # address in the client address attribute so we can reply. Yes, we do this for each packet we receive
-        if self.device_type == DeviceTypes.UDPSERVER:
-            self.client_addr = sender_addr;
-
-        # Print for formatting
+        # Print for formatting (WE NEED TO PUT THIS IN A BETTER SPOT)
         print("\n\n" + "-" * 15 + " RECEIVING LOG " + "-" * 15);
+
+        # Block and wait to receive the number of slices of bytes to receive.
+        # Turn off timeouts here (refer to notes 4 and notes 6)
+        first_time = True;
+
+        while True:
+
+            # If first time through, turn off timeout. Otherwise, have timeout for rest
+            if first_time:
+                in_socket.settimeout(None);
+
+            try:
+                slice_num_data, sender_addr = in_socket.recvfrom(RECV_BUFFER_SIZE);
+                in_socket.settimeout(self.timeout_time);
+                first_time = False;
+
+            except socket.timeout:
+
+                # Increment total timeouts again here. If surpassed max, return special error code
+                timeout_counter += 1;
+                if timeout_counter == 3: # todo <-- make note of this change to max timeouts (smaller chances to give since not as likely to get a response)
+                    print(f"{self.device_type} ERROR: Reached max timeouts of 3 from duplicate packets of previous transaction. "
+                          f"Terminating attempt to receive data.");
+                    return b'XXTIMEDOUTXX';                                                   # todo make a note about this
+
+                print( f"{self.device_type} STATUS: UDP receive socket timed out waiting for a message."
+                    f" Trying attempt {timeout_counter}.");
+                continue;
+
+            # Little detail to add here: if currently the server, we are going to need to save whoever sent the
+            # address in the client address attribute so we can reply. Yes, we do this for each packet we receive
+            if self.device_type == DeviceTypes.UDPSERVER:
+                self.client_addr = sender_addr;
+
+
+
+            # First, check if slice_num_data was actually a duplicate message from the previous transaction (yes, it's possible).
+            if slice_num_data in self.recv_msg_history:
+
+                # If so, don't do anything?
+                print(f"{self.device_type} STATUS: Received duplicate packet for response "
+                      f"{self.recv_msg_history[slice_num_data]} from the previous data transaction. Resending response.")
+                self.__send_with_errors(self.recv_msg_history[slice_num_data], sender_addr, in_socket);
+
+                # Restart the loop again
+                continue;
+
+            break;
+
+        # Turn timeout back on
+        in_socket.settimeout(self.timeout_time);
 
         # Attempt to decode data to find number of slices to receive
         try:
@@ -531,7 +582,7 @@ class RUDPFileTransfer(CommunicationInterface):
 
         # Acknowledge sender slice number received, and add received message and ACK to the message history
         self.__send_with_errors(b'ACK NUM', sender_addr, in_socket);
-        recv_msg_history[slice_num_data] = b'ACK NUM';
+        self.recv_msg_history[slice_num_data] = b'ACK NUM';
 
         # Receiving slices (refer to Notes 3 for while loop explanation)
         i = 0;
@@ -547,12 +598,12 @@ class RUDPFileTransfer(CommunicationInterface):
 
                 except socket.timeout:
 
-                    # Increment total timeouts again here. If surpassed max, return empty data stop function
+                    # Increment total timeouts again here. If surpassed max, return special error code and stop function
                     timeout_counter += 1;
                     if timeout_counter == MAX_TIMEOUTS:
                         print(f"{self.device_type} ERROR: Reached max timeouts of {MAX_TIMEOUTS}. "
                               f"Possible network failure. Terminating attempt to receive data.");
-                        return b'';
+                        return b'XXTIMEDOUTXX';
 
                     print(
                         f"{self.device_type} STATUS: UDP receive socket timed out waiting for slice {i}."
@@ -563,12 +614,12 @@ class RUDPFileTransfer(CommunicationInterface):
             timeout_counter = 0;
 
             # First check if received a duplicate of the previous message
-            if recv_data in recv_msg_history:
+            if recv_data in self.recv_msg_history:
 
                 # If so, reply with the duplicated message's corresponding ack through unreliable network
-                print(f"{self.device_type} STATUS: Received duplicate packet for response {recv_msg_history[recv_data]}."
+                print(f"{self.device_type} STATUS: Received duplicate packet for response {self.recv_msg_history[recv_data]}."
                       f" Resending response.")
-                self.__send_with_errors(recv_msg_history[recv_data], sender_addr, in_socket);
+                self.__send_with_errors(self.recv_msg_history[recv_data], sender_addr, in_socket);
 
                 # Restart the loop again without incrementing i
                 continue;
@@ -578,7 +629,7 @@ class RUDPFileTransfer(CommunicationInterface):
 
             # If we received something else, we can remove the current msg:ack pair in the comm_dict history since
             # we are presuming the sender received the corresponding ack. This is also to keep the dictionary small
-            recv_msg_history.clear();
+            self.recv_msg_history.clear();
 
             # Add received data to total parsed data
             parsed_data += recv_data;
@@ -589,7 +640,7 @@ class RUDPFileTransfer(CommunicationInterface):
             self.__send_with_errors(ack_msg, sender_addr, in_socket);
 
             # Add the (new) recent received msg in message history with its corresponding ack
-            recv_msg_history[recv_data] = ack_msg;
+            self.recv_msg_history[recv_data] = ack_msg;
 
             # Increment i
             i += 1;
@@ -600,11 +651,11 @@ class RUDPFileTransfer(CommunicationInterface):
             print_data = print_data[:13] + "...";
         print(f"\nMessage received: \"{print_data}\"\n");
 
-        # Print for formatting
-        print("-" * 15 + " END OF RECEIVING LOG " + "-" * 15 + "\n");
-
         # After use, ensure to flush socket (refer to notes 5)
         self.flush_socket(in_socket);
+
+        # Print for formatting
+        print("-" * 15 + " END OF RECEIVING LOG " + "-" * 15 + "\n");
 
         # Return the parsed data
         return parsed_data;
