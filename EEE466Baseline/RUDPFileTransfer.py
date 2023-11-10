@@ -50,7 +50,7 @@
             basically meaning stuff will break.
 
 
-        6. Last ACK not sent to sender:
+        6. Last ACK not sent to sender: NO LONGER APPLIES
 
             6.1: I'm encountering an annoying problem where there are often times when the last acknowledgement
             to send to the sender device gets dropped. The thing is, it's not an entire issue because at some point
@@ -58,7 +58,7 @@
             an annoying situation. Honestly, I can't think of any solutions to it - in the end what had needed
             to be sent was sent in terms of data over the wire.
 
-        7. Making the message history list and dictionary a class wide attribute:
+        7. Making the message history list and dictionary a class wide attribute: NO LONGER APPLIES
 
             7.1: Yeah so I was also encountering another problem with UDP, where if the final message a sender or
             receiver sends to the other in a conversation, if it a duplicate, then 99% of the time the duplicates
@@ -70,10 +70,9 @@
 
     Status:
 
-        - todo handle timeout cases now - I've got an idea.
-        - We can test a certain timeout by setting the timeout retries for it to like 3,
-        and have the rest of the timeouts to be 10. That way it's easier to simulate a time out
-        at a certain part of the UDP transactions.
+        - improve status messages (be more specific)
+        - brute force check all possibilities of packet receiving, sending
+        - clean up code and refactor
 
 
 """
@@ -96,16 +95,16 @@ ERROR = -1
 SEED = 66
 
 # Change these constants to create reliability errors. Their sum cannot exceed 1.0.
-DROP_PROBABILITY = 0.0
-REPEAT_PROBABILITY = 0.8
+DROP_PROBABILITY = 0.2
+REPEAT_PROBABILITY = 0.3
 
 # Constant that manages the receive buffer size
 RECV_BUFFER_SIZE = 1028;
 
 # Constant that manages max timeouts
 MAX_TIMEOUTS = 10;
-MAX_TIMEOUTS_END_CONVO = 3;
-
+MAX_TIMEOUTS_TESTING = 10;
+MAX_TIMEOUTS_RECV_FINACK = 3;
 
 
 class RUDPFileTransfer(CommunicationInterface):
@@ -118,7 +117,7 @@ class RUDPFileTransfer(CommunicationInterface):
         """
         This method is used to initialize your Communication Interface object.
 
-        todo: write down the parameter explanations.
+
         """
 
         # Planting the seed
@@ -134,7 +133,7 @@ class RUDPFileTransfer(CommunicationInterface):
         self.client_addr = None;
         self.server_addr = None;
 
-        # Creating ack history to store the most recent ACK from receiver device (list is all we need) (refer to notes 6)
+        # Creating ack history to store the most recent ACK from receiver device (refer to notes 6)
         self.ack_history = [];
 
         # Create a dictionary of messages received from sender. Will store one
@@ -212,6 +211,7 @@ class RUDPFileTransfer(CommunicationInterface):
             - The way how commands are sent depend on the command
 
         :param command: The command you wish to send to the server as a string.
+        Returns: Erro rcode TIMEDOUT if the data sent timed out through no received response.
         """
 
         # Convert inputted data into bytes
@@ -221,9 +221,10 @@ class RUDPFileTransfer(CommunicationInterface):
 
         # Send it over the wire (ensure using correct socket depending on device type)
         if self.device_type == DeviceTypes.UDPCLIENT:
-            self.slice_and_send_udp(self.client_socket, self.server_addr, send_data);
+            return self.slice_and_send_udp(self.client_socket, self.server_addr, send_data, False);
         elif self.device_type == DeviceTypes.UDPSERVER:
-            self.slice_and_send_udp(self.server_socket, self.client_addr, send_data);
+            return self.slice_and_send_udp(self.server_socket, self.client_addr, send_data, False);
+
 
 
     def receive_command(self):
@@ -251,7 +252,7 @@ class RUDPFileTransfer(CommunicationInterface):
             recv_socket = self.server_socket;
 
         # Receive the command and return result
-        recv_data = self.recv_and_parse_udp(recv_socket);
+        recv_data = self.recv_and_parse_udp(recv_socket, False);
         return recv_data.decode();
 
 
@@ -270,8 +271,8 @@ class RUDPFileTransfer(CommunicationInterface):
         path_separated = file_path.split('\\');
         file_name = path_separated[-1];
         print(
-            f"\n{self.device_type} COMM STATUS: Sending file <{file_name}> in directory [{file_path[:-len(file_name)]}] "
-            f"to other device...")
+            f"\n{self.device_type} COMM STATUS: Sending file <{file_name}> in directory [{file_path[:-len(file_name)]}]"
+            f" to other device...")
 
         # Determine the socket to use to send and receiving address,
         # depending on the type of sending device (Default to client)
@@ -281,19 +282,17 @@ class RUDPFileTransfer(CommunicationInterface):
             sending_socket = self.server_socket;
             recv_addr = self.client_addr;
 
-        # # Check if the TCP connection still exists, and that the sender and receiver
-        # # agree in terms of the format of the transmitted data. If not, stop function
-        # if self.verify_sender(sending_socket, b'FILE ACK'):
-        #     return;
-
         # Open 'utf-8' file to read with with(), specifying the encoding [ref Notes 3]...
         with open(file_path, encoding = 'utf-8') as open_file:
 
             # Read the file contents into bytes (.read() returns a string, we convert to bytes)
             file_data = bytes(open_file.read(), 'utf-8');
 
-            # Send the data
-            self.slice_and_send_udp(sending_socket, recv_addr, file_data);
+            # Send the data (check if there was a timeout here). If so, print accordingly and terminate
+            result = self.slice_and_send_udp(sending_socket, recv_addr, file_data, True);
+            if result == TIMEDOUT:
+                print(f"{self.device_type} ERROR: Timeout detected while sending file. Terminating.")
+                return;
 
         # Print status
         print(f"{self.device_type} COMM STATUS: File <{file_name}> finished sending.")
@@ -324,16 +323,18 @@ class RUDPFileTransfer(CommunicationInterface):
         if self.device_type == DeviceTypes.UDPSERVER:
             receiving_socket = self.server_socket;
 
-        # # Check if the TCP connection still exists, and that the sender and receiver
-        # # agree in terms of the format of the transmitted data. If not, stop function
-        # if self.verify_receiver(receiving_socket, b'FILE ACK'):
-        #     return;
-
         # Open the file to write the received file info. If none exists, create one at path file_path
         with open(file_path, 'w', encoding = 'utf-8') as open_file:
 
             # Receiving the data from the sender
-            recv_data = self.recv_and_parse_udp(receiving_socket).decode();
+            recv_data = self.recv_and_parse_udp(receiving_socket, True).decode();
+
+            # Check if there was an error receiving the file. If so, termiante function
+            if recv_data == TIMEDOUT.decode() or recv_data == NON_DECODABLE_NUM.decode():
+                print(f"{self.device_type} ERROR: Detected timeout/error while receiving file. Terminating and writing"
+                      f" to file accordingly.");
+                open_file.write("\nTimeout/error occurred during receiving process. Try receiving again.");
+                return;
 
             # Write received data to the file (wow python makes this easy)
             open_file.write(recv_data);
@@ -360,7 +361,7 @@ class RUDPFileTransfer(CommunicationInterface):
         in_socket.settimeout(self.timeout_time);
 
 
-    def slice_and_send_udp(self, in_socket, recv_addr, in_data):
+    def slice_and_send_udp(self, in_socket, recv_addr, in_data, send_file):
         """
             Function slices up message in 1028 byte groups. Sending device sends
             the separate messages via UDP to the destination device.
@@ -371,10 +372,16 @@ class RUDPFileTransfer(CommunicationInterface):
             <in_socket : socket> : A UDP socket object which the message is sent through.
             <recv_addr : tuple(string, port)> : The destination address to send the UDP traffic to.
             <in_data : bytes> : The data to be sent to the other device
+            <send_file : bool> : Is true if we are sending a file over (used for error handling).
         Returns:
             Returns the TIMEDOUT error code if a timeout occurs
 
         """
+
+        # MAX_TIMEOUTS_TESTING = 10;
+        # if send_file:
+        #     MAX_TIMEOUTS_TESTING = 1;
+
 
         # Print for formatting
         print("\n\n" + "-" * 15 + " SENDING LOG " + "-" * 15);
@@ -388,6 +395,9 @@ class RUDPFileTransfer(CommunicationInterface):
         # Determine how many slices we are to send
         bytes_len = len(in_data);
         slice_num = math.ceil(bytes_len / RECV_BUFFER_SIZE);
+
+        # Initiliaze timeout counter outside of while loop
+        timeout_counter = 0;
 
         # Send number of slices and data slices (refer to Notes 2.2 and 3 for more info)
         i = 0;
@@ -422,22 +432,26 @@ class RUDPFileTransfer(CommunicationInterface):
                 # Configure ack message expect to receive for given slice
                 ack_msg = b'ACK ' + bytes(str(slice_i), 'utf-8');
 
+            # Print this for debugging:
+            send_data_window = send_data.decode();
+            if len(send_data_window) > 13:
+                send_data_window = send_data_window[:13] + "...";
+
             # Sending data through unreliable network
-            print(f"{self.device_type} STATUS: Sending data, expecting ack of {ack_msg.decode()}")
+            print(f"{self.device_type} STATUS: Sending data [{send_data_window}], expecting ack of {ack_msg.decode()}")
             self.__send_with_errors(send_data, recv_addr, in_socket);
 
             # RECV ACK: with max timeout count. If no response received before timeout, send the data
             # for this iteration again. If no ack received after sending last slice (ie. last
             # ack may have been dropped), stop function since would cause a reset connection error.
             recv_ack = None;
-            timeout_counter = 0;
             try:
                 recv_ack = in_socket.recv(RECV_BUFFER_SIZE);
             except socket.timeout:
 
                 # Increment total timeouts here. If surpassed max, terminate function
                 timeout_counter += 1;
-                if timeout_counter == MAX_TIMEOUTS:
+                if timeout_counter == MAX_TIMEOUTS_TESTING:
                     print(f"{self.device_type} ERROR: Reached max timeouts of {MAX_TIMEOUTS}. Possible network failure,"
                           f" or last ACK reply was dropped. Terminating attempt to send data.");
                     return TIMEDOUT;
@@ -452,11 +466,11 @@ class RUDPFileTransfer(CommunicationInterface):
                 continue;
 
             # Handling case where connection gets severed, usually from last ACK msg getting dropped.
-            except ConnectionResetError:
-                if i == slice_num:
-                    print(f"{self.device_type} ERROR: Detected ack to last sent slice was dropped. "
-                          f"Continuing operations as usual. ");
-                    break;
+            # except ConnectionResetError:
+            #     if i == slice_num:
+            #         print(f"{self.device_type} ERROR: Detected ack to last sent slice was dropped. "
+            #               f"Continuing operations as usual. ");
+            #         break;
 
             # Check if the received ACK was as expected. If so, send the next message.
             # If received a duplicate of the previous ack, ignore and re-transmit current slice again.
@@ -468,17 +482,27 @@ class RUDPFileTransfer(CommunicationInterface):
                 print(f"{self.device_type} STATUS: Received {recv_ack.decode()} - replacing previous ack "
                       f"in ACK history.");
 
+            # It is possible to receive a FIN or a FIN ACK from a previous
+            # conversation. If so, ignore and restart iteration
+            elif recv_ack == b'FIN' or recv_ack == b'FIN ACK':
+
+                print(f"{self.device_type} STATUS: Received a 'FIN'/'FIN ACK' (probably from prev convo). "
+                      f"Restarting loop.");
+                continue;
+
             elif recv_ack in self.ack_history:
 
                 # If received duplicate previous ack, retransmit current slice.
-                print(f"{self.device_type} STATUS: Received DUPLICATE ack for {self.ack_history[0].decode()}. Retransmitting"
-                      f" slice {i - 1}.");
+                print(f"{self.device_type} STATUS: Received DUPLICATE ack for {self.ack_history[0].decode()}."
+                      f" Retransmitting slice {i - 1}.");
                 continue;
 
             # In all other scenarios, print error message (mainly for debugging)
             else:
                 print(f"{self.device_type} ERROR: Received an unexpected ack.\n"
-                      f"Expected ack message {ack_msg.decode()}, received {recv_ack.decode()}.");
+                      f"Expected ack message {ack_msg.decode()}, received {recv_ack.decode()}. Retry iteration.");
+                continue; # TODO <-- REMOVE?
+
 
             # Increment i here to send next slice (or terminate loop)
             i += 1;
@@ -488,15 +512,18 @@ class RUDPFileTransfer(CommunicationInterface):
         print(f"{self.device_type} STATUS: Ending conversation - sending FIN.")
         self.__send_with_errors(b'FIN', recv_addr, in_socket);
         while True:
-            recv_ack = self.generic_recv_with_timeouts(in_socket, MAX_TIMEOUTS);
-            if self.check_duplicate_sender(recv_ack):
-                continue;
-            elif recv_ack == TIMEDOUT:
-                return TIMEDOUT;
-            elif recv_ack == b'FIN ACK':
+            recv_ack = self.generic_recv_with_timeouts(in_socket, MAX_TIMEOUTS_TESTING, send_back = True,
+                                                       send_back_msg = b'FIN', dest_addr = recv_addr);
+            if recv_ack == b'FIN ACK':
                 print(f"{self.device_type} STATUS: Receiver has acknowledged end of conversation.")
                 self.update_ack_history(recv_ack);
                 break;
+            elif self.check_duplicate_sender(recv_ack):
+                continue;
+            elif recv_ack == TIMEDOUT:
+                print(f"{self.device_type} ERROR: Timed out waiting for FIN ACK. Try again.")
+                return TIMEDOUT;
+
 
         # After use, ensure to flush socket (refer to notes 5)
         self.flush_socket(in_socket);
@@ -504,7 +531,7 @@ class RUDPFileTransfer(CommunicationInterface):
         print("-" * 15 + " END OF SENDING LOG " + "-" * 15 + "\n");
 
 
-    def recv_and_parse_udp(self, in_socket):
+    def recv_and_parse_udp(self, in_socket, recv_file):
         """
             Function receives data slices of max size 1028 bytes from sender, and reconstructs
             the original message accordingly.
@@ -515,40 +542,50 @@ class RUDPFileTransfer(CommunicationInterface):
 
         Args:
             <in_socket : socket> : A UDP socket object which the message is received from.
+            <recv_file : bool > : Is true if we are receiving a file.
         Returns:
             The parsed meessage in bytes.
         """
+
+        # MAX_TIMEOUTS_TESTING = 10;
+        # if recv_file:
+        #     MAX_TIMEOUTS_TESTING = 1;
 
         # Create dummy vars to contain all the received data and the sender's address
         parsed_data = b'';
         slice_num_data = None;
         sender_addr = None;
 
+        # Create a boolean that tracks first time receiving msgs for commands
+        first_time_comm = False; # todo Can we refactor this?
+
         # Before use, ensure to flush socket (refer to notes 5)
         self.flush_socket(in_socket);
 
-        # If it's first time calling receive after method's invocation, turn off timeouts (refer notes 4)
-        in_socket.settimeout(None);
-        slice_num_data, sender_addr = in_socket.recvfrom(RECV_BUFFER_SIZE);
-        in_socket.settimeout(self.timeout_time);
+        # If it's first time calling receive after method's invocation,
+        # turn off timeouts (refer notes 4) (ONLY FOR COMMANDS)
+        if not recv_file:
+            first_time_comm = True;
+            in_socket.settimeout(None);
+            slice_num_data, sender_addr = in_socket.recvfrom(RECV_BUFFER_SIZE);
+            in_socket.settimeout(self.timeout_time);
 
         # Print for formatting
         print("\n\n" + "-" * 15 + " RECEIVING LOG " + "-" * 15);
 
         # Commence while loop to handle potential FIN/FIN ACK duplicates from
         # previous UDP transaction and potential network timeouts(refer notes 6)
-        first_time = True;
         timeout_counter = 0;
         while True:
 
             # Ensure we don't call another receive after the first method's receive
-            if first_time:
-                first_time = False;
+            if first_time_comm:
+                first_time_comm = False;
             else:
 
                 # Account for timeouts this time
                 try:
-                    slice_num_data = in_socket.recvfrom(RECV_BUFFER_SIZE);
+                    slice_num_data, sender_addr = in_socket.recvfrom(RECV_BUFFER_SIZE);
 
                 except socket.timeout:
 
@@ -556,7 +593,7 @@ class RUDPFileTransfer(CommunicationInterface):
                     timeout_counter += 1;
 
                     # If reached max, give up and return error code
-                    if timeout_counter == MAX_TIMEOUTS:
+                    if timeout_counter == MAX_TIMEOUTS_TESTING:
                         print(f"{self.device_type} ERROR: Reached max timeouts of {MAX_TIMEOUTS} from "
                               f"duplicate packets of previous transaction. Terminating attempt to receive data.");
                         return TIMEDOUT;
@@ -571,15 +608,22 @@ class RUDPFileTransfer(CommunicationInterface):
 
             # -- Check if slice_num_data was a FIN or a FIN ACK from previous UDP transaction --
 
-            # If was FIN... resend response and restart loop
-            if slice_num_data in self.recv_msg_history:
-                print(f"{self.device_type} STATUS: Received duplicate FIN from previous transaction. Resendig response.");
-                self.__send_with_errors(self.recv_msg_history[slice_num_data], sender_addr, in_socket);
+            # If was FIN from prev convo... resend response and restart loop
+            if slice_num_data == b'FIN':
+                print(f"{self.device_type} STATUS: Received duplicate FIN from previous transaction. Resending response.");
+                self.__send_with_errors(b'FIN ACK', sender_addr, in_socket);
                 continue;
 
             # If was FIN ACK, ignore and restart loop
-            if slice_num_data == b'FIN ACK':
+            elif slice_num_data == b'FIN ACK':
                 print(f"{self.device_type} STATUS: Received duplicate FIN from previous transaction. Ignoring.");
+                continue;
+
+            # IF! it could have been something in the message history, handle that case too.
+            elif slice_num_data in self.recv_msg_history:
+                print(f"{self.device_type} STATUS: Received duplicate message {slice_num_data} from previous "
+                      f"transaction. Resending response.");
+                self.__send_with_errors(self.recv_msg_history[slice_num_data], sender_addr, in_socket);
                 continue;
 
             # Otherwise, break from first loop
@@ -593,8 +637,12 @@ class RUDPFileTransfer(CommunicationInterface):
             print(f"{self.device_type} STATUS: Expect to receive {slice_num} slices of bytes from sender. "
                   f"Acknowledging...");
         except ValueError:
-            print(f"{self.device_type} ERROR: Unable to decode received slice number data. Likely due to network error."
-                  f" Terminating receiving function.");
+            print(f"{self.device_type} VALUE ERROR: Unable to decode received slice number data [{slice_num_data}]. "
+                  f"Likely due to network error. Terminating receiving function.");
+            return NON_DECODABLE_NUM;
+        except AttributeError:
+            print(f"{self.device_type} ATTRIBUTE ERROR: Unable to decode received slice number data [{slice_num_data}]."
+                  f" Likely due to network error. Terminating receiving function.");
             return NON_DECODABLE_NUM;
 
         # Acknowledge sender slice number received, and remove old msg history and
@@ -609,7 +657,7 @@ class RUDPFileTransfer(CommunicationInterface):
         while i < slice_num:
 
             # Receive data (account for timeout possibility)
-            recv_data = self.generic_recv_with_timeouts(in_socket, MAX_TIMEOUTS);
+            recv_data = self.generic_recv_with_timeouts(in_socket, MAX_TIMEOUTS_TESTING);
             if recv_data == TIMEDOUT:
                 return TIMEDOUT;
 
@@ -642,10 +690,11 @@ class RUDPFileTransfer(CommunicationInterface):
 
         # Send FIN ACK after receiving FIN to acknowledge end of transmission
         while True:
-            recv_data = self.generic_recv_with_timeouts(in_socket, MAX_TIMEOUTS);
+            recv_data = self.generic_recv_with_timeouts(in_socket, MAX_TIMEOUTS_TESTING);
             if self.check_duplicate_receiver(recv_data, in_socket, sender_addr):
                 continue;
             elif recv_data == TIMEDOUT:
+                print(f"{self.device_type} ERROR: Timed out waiting for FIN.");
                 return TIMEDOUT;
             elif recv_data == b'FIN':
                 print(f"{self.device_type} STATUS: Received FIN. Acknowledging with FIN ACK.")
@@ -684,14 +733,16 @@ class RUDPFileTransfer(CommunicationInterface):
         # Checking message history if did receive duplicate
         if in_recv_data in self.recv_msg_history:
 
+            # Print this for debugging:
+            recv_data_window = in_recv_data.decode();
+            if len(recv_data_window) > 13:
+                recv_data_window = recv_data_window[:13] + "...";
+
             # If so, reply with the duplicated message's corresponding ack through unreliable network
             print(
-                f"{self.device_type} STATUS: Received duplicate packet for response {self.recv_msg_history[in_recv_data]}."
-                f" Resending response.")
+                f"{self.device_type} STATUS: Received duplicate packet [{recv_data_window}] for response "
+                f"{self.recv_msg_history[in_recv_data]}. Resending response.")
             self.__send_with_errors(self.recv_msg_history[in_recv_data], sender_addr, in_socket);
-
-            for key in self.recv_msg_history:
-                print(key);
 
             # Return true if received duplicate
             return True;
@@ -725,12 +776,13 @@ class RUDPFileTransfer(CommunicationInterface):
             True when received ack is in history. Otherwise, false.
         """
         if in_recv_ack in self.ack_history:
-            print(f"{self.device_type} STATUS: Received DUPLICATE ack for {self.ack_history[0].decode()}. Retransmitting"
-                  f" data.");
+            print(f"{self.device_type} STATUS: Received DUPLICATE ack for {self.ack_history[0].decode()}."
+                  f" Retransmitting data.");
             return True;
         return False;
 
-    def generic_recv_with_timeouts(self, in_socket, timeout_count):
+    def generic_recv_with_timeouts(self, in_socket, timeout_count, send_back = False, send_back_msg = None,
+                                   dest_addr = None):
         """ 
         When this method is called, it calls a blocking receive, and if it timeouts 
         an inputted amount, it returns a special timeout code to indicate so. 
@@ -738,6 +790,9 @@ class RUDPFileTransfer(CommunicationInterface):
         Args:
             <in_socket : socket> : The socket to receive data through.
             <timeout_count : int> : The number of times the connection is to timeout before giving up.
+            <send_back : bool> : If True, will send back a certain input
+            <send_back_msg : bytes> : The message to send back after timeouts to other device if send_back is true.
+            <dest_addr : tuple(ip, port)> : The destination address to send back messages to if send_back is True.
         Returns:
             The received data. If timed out, returns TIMEDOUT error code. 
         """
@@ -761,9 +816,14 @@ class RUDPFileTransfer(CommunicationInterface):
                           f"Possible network failure. Terminating attempt to receive data.");
                     return TIMEDOUT;
 
-                print(
-                    f"{self.device_type} STATUS: UDP receive socket timed out waiting for data."
-                    f" Trying attempt {timeout_counter}.");
+                print(  f"{self.device_type} STATUS: UDP receive socket timed out waiting for data."
+                        f" Trying attempt {timeout_counter}.");
+
+                # If send_back bool True, send back the inputted message (with errors)
+                if send_back:
+                    print(f"{self.device_type} STATUS: Sending back {send_back_msg} again.");
+                    self.__send_with_errors(send_back_msg, dest_addr, in_socket);
+
                 continue;
 
 

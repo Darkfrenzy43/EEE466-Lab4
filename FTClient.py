@@ -2,6 +2,7 @@ import os
 import sys
 from EEE466Baseline.RUDPFileTransfer import RUDPFileTransfer as CommunicationInterface
 
+# Error codes from consants file
 from constants_file import TIMEDOUT, NON_DECODABLE_NUM
 
 # DO NOT import socket
@@ -62,8 +63,12 @@ class FTClient(object):
             # Getting user input (stripped of whitespace)
             user_input = input("\nType in a command to send to server: \n> ");
 
-            # Send user input to server
-            self.comm_inf.send_command(user_input);
+            # Send user input to server (capture result if timed out, restart loop)
+            result = self.comm_inf.send_command(user_input);
+            if result == TIMEDOUT:
+                print("CLIENT STATUS: Time out detected. Restarting loop.");
+                continue;
+
             print(f"CLIENT STATUS: Command [{user_input}] sent to server. Awaiting response...");
 
             # Wait for a server response, decode received msg accordingly (refer to Notes 2)
@@ -92,6 +97,16 @@ class FTClient(object):
                 print("CLIENT STATUS: Server acknowledged quit request. Terminating client execution...");
                 break;
 
+            elif server_response == TIMEDOUT.decode():
+
+                # If timed out receiving a response, restart while loop
+                print("CLIENT ERROR: No response from server received. Restarting main loop.");
+
+            elif server_response == NON_DECODABLE_NUM.decode():
+
+                # If received a "bad packet", restart while loop
+                print("CLIENT ERROR: Response from server was non-decodable. Restarting made loop.");
+
             else:
 
                 # If nothing else matches, means error was returned. Print error msg accordingly.
@@ -108,14 +123,8 @@ class FTClient(object):
         # Create the path variable for clarity
         client_file_path = "Client\\Receive\\" + in_file_name;
 
-        # Receive the requested file and place in Client\Receive\ directory
+        # Receive the requested file and place in Client\Receive\ directory (timeouts handled within)
         self.comm_inf.receive_file(client_file_path);
-
-        # Verify here if client received the file (refer to Notes 1)
-        if os.path.exists(client_file_path):
-            print("CLIENT STATUS: Requested file confirmed received in client database.");
-        else:
-            print("CLIENT SIDE ERROR: Requested file failed to be placed in client database.");
 
 
     def execute_put(self, in_file_name):
@@ -134,8 +143,11 @@ class FTClient(object):
         if os.path.exists(client_file_path):
 
             print("CLIENT STATUS: File to send exists in client database. Sending...");
-            self.comm_inf.send_command("ACK");
+            if self.comm_inf.send_command("ACK") == TIMEDOUT:
+                print("CLIENT ERROR: Sending ACK unsuccessful. Aborting sending file.");
+                return;
 
+            # If no timeout, send file (timeouts handled within function)
             self.comm_inf.send_file(client_file_path);
 
         else:

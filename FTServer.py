@@ -6,6 +6,9 @@ import sys
 from EEE466Baseline.RUDPFileTransfer import RUDPFileTransfer as CommunicationInterface
 from constants_file import ServerState
 
+# Error codes from constants file
+from constants_file import TIMEDOUT, NON_DECODABLE_NUM
+
 # DO NOT import socket
 
 """ 
@@ -78,13 +81,13 @@ class FTServer(object):
         # Server main loop:
         while True:
 
-            # Wait to receive a command from the client
+            # Wait to receive a command from the client (check if there was a timeout).
             print("\nSERVER: Waiting to receive command from client... ", end = "");
             client_command = self.comm_inf.receive_command();
-            if client_command == "XX_TIMEDOUT_XX":
+            if client_command == TIMEDOUT.decode():
                 print("\nSERVER: Experienced timed out. Restarting loop.");
                 continue;
-            elif client_command == "XX_NON_DECODABLE_NUM_XX":
+            elif client_command == NON_DECODABLE_NUM.decode():
                 print("\nSERVER: Command failed. Restarting loop.");
                 continue;
             print(f"Command received: [{client_command}]");
@@ -98,7 +101,8 @@ class FTServer(object):
 
                 # Send to client here a reply notifying error and to retry.
                 print(f"SERVER SIDE ERROR: Too many arguments received. Try again.")
-                self.comm_inf.send_command("TOO MANY ARGS");
+                if self.comm_inf.send_command("TOO MANY ARGS") == TIMEDOUT:
+                    print("SERVER ERROR: Timed out sending back TOO MANY ARGS. Continuing on server side anyways.");
                 continue;
 
             # Decode the array and handle decoding errors accordingly (refer Notes 1, 4, 5, 6).
@@ -134,10 +138,12 @@ class FTServer(object):
             <in_file_name : String> : This is the name of the requested file in the server's database.
         """
 
-        # Notify the client that server acknowledged get request
-        self.comm_inf.send_command("GET ACK");
+        # Notify the client that server acknowledged get request (account for timeout
+        if self.comm_inf.send_command("GET ACK") == TIMEDOUT:
+            print("SERVER STATUS: Timed out sending back GET ACK. Terminating transaction.");
+            return;
 
-        # Once get request acknowledged by client, send the file
+        # Once get request acknowledged by client, send the file (reliability issues handled within)
         self.comm_inf.send_file("Server\\Send\\" + in_file_name);
 
 
@@ -151,7 +157,9 @@ class FTServer(object):
         """
 
         # First, send acknowledgement
-        self.comm_inf.send_command("PUT ACK");
+        if self.comm_inf.send_command("PUT ACK") == TIMEDOUT:
+            print("SERVER STATUS: Timed out sending back PUT ACK. Terminating transaction.");
+            return;
 
         # Next, wait for client response as they check if the given file exists in their database.
         client_response = self.comm_inf.receive_command();
@@ -162,19 +170,18 @@ class FTServer(object):
             # Create var for the file path destination
             server_file_path = "Server\\Receive\\" + in_file_name;
 
-            # Receive the file
+            # Receive the file (handles timeouts within function)
             self.comm_inf.receive_file(server_file_path);
 
-            # Verify if the file is now in the server database since pycharm doesn't auto update
-            if os.path.exists(server_file_path):
-                print("SERVER STATUS: file sent by client fully received in server database.");
-            else:
-                print("SERVER SIDE ERROR: File sent by client failed to be placed in server database.");
 
         # If the client did not have the file... throw error
         elif client_response == "ERROR":
             print("SERVER SIDE ERROR: The file to receive from client does not exist in client database. "
                   "Try again.");
+
+        # Handle reliability issue errors
+        if client_response == TIMEDOUT.decode() or client_response == NON_DECODABLE_NUM.decode():
+            print("SERVER SIDE ERROR: The client response either timed out or non-decodable. Aborting receive attempt.")
 
 
     def execute_quit(self):
@@ -182,7 +189,9 @@ class FTServer(object):
         Function simply prints status message, acknowledges client quit request, and closes connection. """
 
         print("SERVER STATUS: Received quit request. Acknowledging...")
-        self.comm_inf.send_command("QUIT ACK");
+        if self.comm_inf.send_command("QUIT ACK") == TIMEDOUT:
+            print("SERVER STATUS: Timed out sending back PUT ACK. Terminating transaction.");
+            return;
 
         # We'll physically quit the program here, to avoid the case where last ACK from client
         # was dropped, which would result in a timeout and then a forcibly closed error.
@@ -204,22 +213,28 @@ class FTServer(object):
             <server_error_state : ServerState> : The state the server is in that reflects the error that had occurred.
         """
 
+
+        result = None;
         if server_error_state == ServerState.NO_FILE:
             print("SERVER SIDE ERROR: The command was sent without a file to transfer. Try again.");
-            self.comm_inf.send_command("NO FILE");
+            result = self.comm_inf.send_command("NO FILE");
 
         elif server_error_state == ServerState.UNRECOG_COMM:
             print("SERVER SIDE ERROR: The inputted command is unrecognized. Try again.");
-            self.comm_inf.send_command("UNRECOG COMM");
+            result = self.comm_inf.send_command("UNRECOG COMM");
 
         elif server_error_state == ServerState.NONEXIST_FILE:
             print("SERVER SIDE ERROR: The inputted file does not exist in the "
                   "server's database. Try again.");
-            self.comm_inf.send_command("NONEXIST FILE");
+            result = self.comm_inf.send_command("NONEXIST FILE");
 
         elif server_error_state == ServerState.INVALID_QUIT:
             print("SERVER SIDE ERROR: The quit command was sent with extra arguments. Try again.");
-            self.comm_inf.send_command("QUIT INVALID");
+            result = self.comm_inf.send_command("QUIT INVALID");
+
+        # Handle if there was a timeout sending the error back
+        if result == TIMEDOUT:
+            print("SERVER SIDE ERROR: Sending back the error unsuccessful. Continuing operations as usual.");
 
 
     def parse_command(self, in_command):
