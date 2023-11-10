@@ -574,7 +574,7 @@ class RUDPFileTransfer(CommunicationInterface):
             # If was FIN... resend response and restart loop
             if slice_num_data in self.recv_msg_history:
                 print(f"{self.device_type} STATUS: Received duplicate FIN from previous transaction. Resendig response.");
-                self.__send_with_errors(self.recv_msg_history[slice_num_data], sender_addr, in_socket);n
+                self.__send_with_errors(self.recv_msg_history[slice_num_data], sender_addr, in_socket);
                 continue;
 
             # If was FIN ACK, ignore and restart loop
