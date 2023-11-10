@@ -70,7 +70,10 @@
 
     Status:
 
-        - todo handle timeout cases now
+        - todo handle timeout cases now - I've got an idea.
+        - We can test a certain timeout by setting the timeout retries for it to like 3,
+        and have the rest of the timeouts to be 10. That way it's easier to simulate a time out
+        at a certain part of the UDP transactions.
 
 
 """
