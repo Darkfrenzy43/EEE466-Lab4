@@ -70,7 +70,10 @@
 
     Status:
 
-        - todo handle timeout cases now
+        - todo handle timeout cases now - I've got an idea.
+        - We can test a certain timeout by setting the timeout retries for it to like 3,
+        and have the rest of the timeouts to be 10. That way it's easier to simulate a time out
+        at a certain part of the UDP transactions.
 
 
 """
@@ -93,8 +96,8 @@ ERROR = -1
 SEED = 66
 
 # Change these constants to create reliability errors. Their sum cannot exceed 1.0.
-DROP_PROBABILITY = 0.5
-REPEAT_PROBABILITY = 0.5
+DROP_PROBABILITY = 0.0
+REPEAT_PROBABILITY = 0.8
 
 # Constant that manages the receive buffer size
 RECV_BUFFER_SIZE = 1028;
@@ -571,7 +574,7 @@ class RUDPFileTransfer(CommunicationInterface):
             # If was FIN... resend response and restart loop
             if slice_num_data in self.recv_msg_history:
                 print(f"{self.device_type} STATUS: Received duplicate FIN from previous transaction. Resendig response.");
-                self.__send_with_errors(self.recv_msg_history[slice_num_data], sender_addr, in_socket);n
+                self.__send_with_errors(self.recv_msg_history[slice_num_data], sender_addr, in_socket);
                 continue;
 
             # If was FIN ACK, ignore and restart loop
