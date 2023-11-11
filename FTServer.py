@@ -82,13 +82,13 @@ class FTServer(object):
         while True:
 
             # Wait to receive a command from the client (check if there was a timeout).
-            print("\nSERVER: Waiting to receive command from client... ", end = "");
+            print("\nSERVER STATUS: Waiting to receive command from client... ", end = "");
             client_command = self.comm_inf.receive_command();
             if client_command == TIMEDOUT.decode():
-                print("\nSERVER: Experienced timed out. Restarting loop.");
+                print("\nSERVER STATUS: Experienced timed out. Restarting loop.");
                 continue;
             elif client_command == NON_DECODABLE_NUM.decode():
-                print("\nSERVER: Command failed. Restarting loop.");
+                print("\nSERVER STATUS: Command failed. Restarting loop.");
                 continue;
             print(f"Command received: [{client_command}]");
 
@@ -190,8 +190,7 @@ class FTServer(object):
 
         print("SERVER STATUS: Received quit request. Acknowledging...")
         if self.comm_inf.send_command("QUIT ACK") == TIMEDOUT:
-            print("SERVER STATUS: Timed out sending back PUT ACK. Terminating transaction.");
-            return;
+            print("SERVER STATUS: Timed out sending back QUIT ACK. Continuing server termination...");
 
         # We'll physically quit the program here, to avoid the case where last ACK from client
         # was dropped, which would result in a timeout and then a forcibly closed error.

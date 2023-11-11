@@ -95,7 +95,7 @@ ERROR = -1
 SEED = 66
 
 # Change these constants to create reliability errors. Their sum cannot exceed 1.0.
-DROP_PROBABILITY = 0.2
+DROP_PROBABILITY = 0.4
 REPEAT_PROBABILITY = 0.3
 
 # Constant that manages the receive buffer size
@@ -466,11 +466,11 @@ class RUDPFileTransfer(CommunicationInterface):
                 continue;
 
             # Handling case where connection gets severed, usually from last ACK msg getting dropped.
-            # except ConnectionResetError:
-            #     if i == slice_num:
-            #         print(f"{self.device_type} ERROR: Detected ack to last sent slice was dropped. "
-            #               f"Continuing operations as usual. ");
-            #         break;
+            except ConnectionResetError:
+                if i == slice_num:
+                    print(f"{self.device_type} ERROR: A connection was detected to be forcibly closed. "
+                          f"Continuing operations as usual. ");
+                    break;
 
             # Check if the received ACK was as expected. If so, send the next message.
             # If received a duplicate of the previous ack, ignore and re-transmit current slice again.
@@ -478,13 +478,23 @@ class RUDPFileTransfer(CommunicationInterface):
 
                 self.update_ack_history(recv_ack);
 
+                # Reset timeout counter
+                timeout_counter = 0;
+
                 # Print status
                 print(f"{self.device_type} STATUS: Received {recv_ack.decode()} - replacing previous ack "
                       f"in ACK history.");
 
-            # It is possible to receive a FIN or a FIN ACK from a previous
-            # conversation. If so, ignore and restart iteration
-            elif recv_ack == b'FIN' or recv_ack == b'FIN ACK':
+            # It is possible to receive a FIN from a previous, or currently non-terminated sender device.
+            # If received, reply with a fin ack to terminate that conversation
+            elif recv_ack == b'FIN':
+
+                print(f"{self.device_type} STATUS: Received a 'FIN'. Sending back FIN ACK and restarting loop.");
+                self.__send_with_errors(b'FIN ACK', recv_addr, in_socket);
+                continue;
+
+            # Also could receive a FIN ACK. If so, just ignore and restart loop.
+            elif recv_ack == b'FIN ACK':
 
                 print(f"{self.device_type} STATUS: Received a 'FIN'/'FIN ACK' (probably from prev convo). "
                       f"Restarting loop.");
@@ -825,6 +835,13 @@ class RUDPFileTransfer(CommunicationInterface):
                     self.__send_with_errors(send_back_msg, dest_addr, in_socket);
 
                 continue;
+
+            # Apparently this is also a possibility of happening.
+            except ConnectionResetError:
+
+                print(f"{self.device_type} ERROR: Detected the connection forcibly being shutdown."
+                      f" Possible network failure. Terminating attempt to receive data.");
+                return TIMEDOUT;
 
 
     def __send_with_errors(self, msg, addr, in_socket):
