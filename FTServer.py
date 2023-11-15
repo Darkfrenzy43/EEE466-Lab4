@@ -12,7 +12,7 @@ from constants_file import TIMEDOUT, NON_DECODABLE_NUM
 # DO NOT import socket
 
 """ 
-    Notes:
+    Notes: (1-6 were notes made from Lab 2)
     
         1. Ensuring we get proper input from the user is pretty simple. If the number of elements that we parse
         is more than 2 (meaning we get something more than "command,file_name"), then obviously that is bad input.
@@ -81,7 +81,8 @@ class FTServer(object):
         # Server main loop:
         while True:
 
-            # Wait to receive a command from the client (check if there was a timeout).
+            # Wait to receive a command from the client (account for possible UDP errors during receiving).
+            # If there was a timeout while receiving data, restart loop. If a bad packet was received, restart loop.
             print("\nSERVER STATUS: Waiting to receive command from client... ", end = "");
             client_command = self.comm_inf.receive_command();
             if client_command == TIMEDOUT.decode():
@@ -99,13 +100,13 @@ class FTServer(object):
             # client sent too many arguments. Re-prompt client.
             if len(parsed_command) == 0:
 
-                # Send to client here a reply notifying error and to retry.
+                # Send to client here a reply notifying error and to retry (account for sending UDP errors)
                 print(f"SERVER SIDE ERROR: Too many arguments received. Try again.")
                 if self.comm_inf.send_command("TOO MANY ARGS") == TIMEDOUT:
-                    print("SERVER ERROR: Timed out sending back TOO MANY ARGS. Continuing on server side anyways.");
+                    print("SERVER ERROR: Timed out sending back [TOO MANY ARGS]. Aborting data transaction.");
                 continue;
 
-            # Decode the array and handle decoding errors accordingly (refer Notes 1, 4, 5, 6).
+            # Otherwise, decode the array and handle decoding errors accordingly (refer Notes 1, 4, 5, 6).
             # If error, notify client and restart main server loop.
             server_state = self.decode(parsed_command);
 
@@ -138,12 +139,12 @@ class FTServer(object):
             <in_file_name : String> : This is the name of the requested file in the server's database.
         """
 
-        # Notify the client that server acknowledged get request (account for timeout
+        # Notify the client that server acknowledged get request (handle UDP timeout error)
         if self.comm_inf.send_command("GET ACK") == TIMEDOUT:
             print("SERVER STATUS: Timed out sending back GET ACK. Terminating transaction.");
             return;
 
-        # Once get request acknowledged by client, send the file (reliability issues handled within)
+        # Once get request acknowledged by client, send the file (UDP reliability issues handled within)
         self.comm_inf.send_file("Server\\Send\\" + in_file_name);
 
 
@@ -156,7 +157,7 @@ class FTServer(object):
             <in_file_name : String> : The name of the file to be received from the client.
         """
 
-        # First, send acknowledgement
+        # First, send acknowledgement (account for UDP timeout error)
         if self.comm_inf.send_command("PUT ACK") == TIMEDOUT:
             print("SERVER STATUS: Timed out sending back PUT ACK. Terminating transaction.");
             return;
@@ -179,9 +180,12 @@ class FTServer(object):
             print("SERVER SIDE ERROR: The file to receive from client does not exist in client database. "
                   "Try again.");
 
-        # Handle reliability issue errors
-        if client_response == TIMEDOUT.decode() or client_response == NON_DECODABLE_NUM.decode():
-            print("SERVER SIDE ERROR: The client response either timed out or non-decodable. Aborting receive attempt.")
+        # Handle UDP errors when receiving data from client
+        elif client_response == TIMEDOUT.decode():
+            print("SERVER SIDE ERROR: The client response timed out. Aborting receive attempt.");
+        elif client_response == NON_DECODABLE_NUM.decode():
+            print("SERVER SIDE ERROR: The client response could not be decoded. Aborting receive attempt.");
+
 
 
     def execute_quit(self):
@@ -190,7 +194,7 @@ class FTServer(object):
 
         print("SERVER STATUS: Received quit request. Acknowledging...")
         if self.comm_inf.send_command("QUIT ACK") == TIMEDOUT:
-            print("SERVER STATUS: Timed out sending back QUIT ACK. Continuing server termination...");
+            print("SERVER STATUS: Timed out sending back QUIT ACK. Continuing server termination anyways...");
 
         # We'll physically quit the program here, to avoid the case where last ACK from client
         # was dropped, which would result in a timeout and then a forcibly closed error.
@@ -211,7 +215,6 @@ class FTServer(object):
         Args:
             <server_error_state : ServerState> : The state the server is in that reflects the error that had occurred.
         """
-
 
         result = None;
         if server_error_state == ServerState.NO_FILE:

@@ -2,7 +2,7 @@ import os
 import sys
 from EEE466Baseline.RUDPFileTransfer import RUDPFileTransfer as CommunicationInterface
 
-# Error codes from consants file
+# Error codes from constants file
 from constants_file import TIMEDOUT, NON_DECODABLE_NUM
 
 # DO NOT import socket
@@ -52,7 +52,7 @@ class FTClient(object):
         :return: The program exit code.
         """
 
-        print("CLIENT STATUS: Client started. Looking for server to connect to...")
+        print("CLIENT STATUS: UDP Client started...")
 
         # Upon initialization, connect client to the server
         self.comm_inf.initialize_client(self.server_address[0], self.server_address[1]);
@@ -60,15 +60,14 @@ class FTClient(object):
         # Client main loop:
         while True:
 
-            # Getting user input (stripped of whitespace)
+            # Getting user input (cleaning happens on Server side)
             user_input = input("\nType in a command to send to server: \n> ");
 
-            # Send user input to server (capture result if timed out, restart loop)
-            result = self.comm_inf.send_command(user_input);
-            if result == TIMEDOUT:
+            # Send user input to server (if sending fails from timeout, restart loop)
+            send_result = self.comm_inf.send_command(user_input);
+            if send_result == TIMEDOUT:
                 print("CLIENT STATUS: Time out detected. Restarting loop.");
                 continue;
-
             print(f"CLIENT STATUS: Command [{user_input}] sent to server. Awaiting response...");
 
             # Wait for a server response, decode received msg accordingly (refer to Notes 2)
@@ -97,6 +96,8 @@ class FTClient(object):
                 print("CLIENT STATUS: Server acknowledged quit request. Terminating client execution...");
                 break;
 
+            # Handling cases where server returned a UDP error response
+            # (from timeout or received a bad packet)
             elif server_response == TIMEDOUT.decode():
 
                 # If timed out receiving a response, restart while loop
@@ -109,7 +110,7 @@ class FTClient(object):
 
             else:
 
-                # If nothing else matches, means error was returned. Print error msg accordingly.
+                # If nothing else matches, means request-reply error was returned. Print error msg accordingly.
                 self.print_client_error(server_response);
 
 
@@ -123,7 +124,8 @@ class FTClient(object):
         # Create the path variable for clarity
         client_file_path = "Client\\Receive\\" + in_file_name;
 
-        # Receive the requested file and place in Client\Receive\ directory (timeouts handled within)
+        # Receive the requested file and place in Client\Receive\
+        # directory (UDP errors handled within)
         self.comm_inf.receive_file(client_file_path);
 
 
@@ -143,16 +145,22 @@ class FTClient(object):
         if os.path.exists(client_file_path):
 
             print("CLIENT STATUS: File to send exists in client database. Sending...");
+
+            # Send ACK. If fails from UDP error, abort data transaction.
             if self.comm_inf.send_command("ACK") == TIMEDOUT:
                 print("CLIENT ERROR: Sending ACK unsuccessful. Aborting sending file.");
                 return;
 
-            # If no timeout, send file (timeouts handled within function)
+            # If no UDP error, send file (UDP errors handled within function)
             self.comm_inf.send_file(client_file_path);
 
         else:
             print("CLIENT SIDE ERROR: File to send does not exist in client database. Verify file name.");
-            self.comm_inf.send_command("ERROR");
+
+            # Account for UDP errors here as well
+            if self.comm_inf.send_command("ERROR") == TIMEDOUT:
+                print("CLIENT ERROR: Sending ERROR unsuccessful. Ending data transaction.");
+                return;
 
 
     def parse_command(self, in_command):
